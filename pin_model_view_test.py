@@ -5,7 +5,7 @@ import pinocchio
 import numpy as np
  
 # This path refers to Pinocchio source code but you can define your own directory here.
-pinocchio_model_dir = Path(__file__).parent.parent / "ur3_experiment"
+pinocchio_model_dir = Path(__file__).parent.parent / "traj_opti_jumping"
  
 # You should change here to set up your own URDF file or just pass it as an argument of
 # this example.
@@ -34,19 +34,20 @@ print(f"Go2 mass: {mass} kg")
 data = model.createData()
  
 # Sample a random configuration
-# q = pinocchio.randomConfiguration(model)
+q = pinocchio.randomConfiguration(model)
 q = np.array([0.0, 0.0, 0.4, 0.4, 
               0.0, 0.0, 0.0, 
               0.0, 0.95, -1.75, 
               0.0, 0.95, -1.75, 
               0.0, 0.95, -1.75, 
               0.0, 0.95, -1.75], dtype=np.double)
+# q = pinocchio.neutral(model)
+
 print(f"q: {q.T}")
  
 # Perform the forward kinematics over the kinematic tree
 pinocchio.forwardKinematics(model, data, q)
  
-# q = pinocchio.neutral(model)
 # v = pinocchio.utils.zero(model.nv)
 # a = pinocchio.utils.zero(model.nv)
 

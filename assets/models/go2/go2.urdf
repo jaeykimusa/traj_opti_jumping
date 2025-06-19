@@ -205,6 +205,23 @@
     <dynamics damping="0.1" friction="0.2"/>
   </joint>
 
+  <!-- Front Left (FL) End-effector -jkim -->
+  <joint name="FL_ee_joint" type="fixed">
+    <parent link="FL_calf"/>
+    <child link="FL_ee"/>
+    <origin xyz="0 0 -0.1" rpy="0 0 0"/> </joint>
+  <link name="FL_ee">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.001"/> <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
+    </inertial>
+    <collision>
+      <geometry>
+        <sphere radius="0.01"/> </geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </collision>
+  </link>
+
   <!-- Front Right (FR) Leg -->
   <link name="FR_hip">
     <inertial>
@@ -332,6 +349,23 @@
     <limit lower="-2.7227" upper="-0.83776" effort="45.43" velocity="10"/>
     <dynamics damping="0.1" friction="0.2"/>
   </joint>
+
+  <!-- Front Right (FR) End-effector -jkim -->
+  <joint name="FR_ee_joint" type="fixed">
+    <parent link="FR_calf"/>
+    <child link="FR_ee"/>
+    <origin xyz="0 0 -0.1" rpy="0 0 0"/> </joint>
+  <link name="FR_ee">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.001"/> <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
+    </inertial>
+    <collision>
+      <geometry>
+        <sphere radius="0.01"/> </geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </collision>
+  </link>
 
   <!-- Rear Left (RL) Leg -->
   <link name="RL_hip">
@@ -461,6 +495,23 @@
     <dynamics damping="0.1" friction="0.2"/>
   </joint>
 
+  <!-- Rear Left (RL) End-effector -jkim -->
+  <joint name="RL_ee_joint" type="fixed">
+    <parent link="RL_calf"/>
+    <child link="RL_ee"/>
+    <origin xyz="0 0 -0.1" rpy="0 0 0"/> </joint>
+  <link name="RL_ee">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.001"/> <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
+    </inertial>
+    <collision>
+      <geometry>
+        <sphere radius="0.01"/> </geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </collision>
+  </link>
+
   <!-- Rear Right (RR) Leg -->
   <link name="RR_hip">
     <inertial>
@@ -588,4 +639,22 @@
     <limit lower="-2.7227" upper="-0.83776" effort="45.43" velocity="10"/>
     <dynamics damping="0.1" friction="0.2"/>
   </joint>
+
+  <!-- Rear Right (RR) End-effector -jkim -->
+  <joint name="RR_ee_joint" type="fixed">
+    <parent link="RR_calf"/>
+    <child link="RR_ee"/>
+    <origin xyz="0 0 -0.1" rpy="0 0 0"/> </joint>
+  <link name="RR_ee">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.001"/> <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
+    </inertial>
+    <collision>
+      <geometry>
+        <sphere radius="0.01"/> </geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </collision>
+  </link>
 </robot>
+

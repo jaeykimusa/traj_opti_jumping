@@ -4,10 +4,17 @@ Developing the first baseline of trajectory optimization for jumping controller.
 
 PROGRESS:
 
-6/18/2025
+6/19/2025
 - .
 - TODO:
   - .
+
+6/18/2025
+- computed the ground reaction forces at each contact point. + moments. However, there is a big force in x direction which reduce the amount of normal forces on z direction. 
+- Got rerun work on mac. Just added "absl-py" as one of dependecies in mpac_logging -> pyproject.toml. And just pip3 install -e . no need to install rerun nor rerun-sdk externally. 
+- TODO:
+  - Add dynamics constraints to prohibit any infeasible contact force in x direction.
+  - Compute qp solver to make it stand dynamically.
 
 6/17/2025:
 - I think i did make the default standing position on the ground where all the ee at z = 0, and it will calculate floating base level using qp.

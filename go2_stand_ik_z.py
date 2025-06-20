@@ -3,142 +3,28 @@ from sys import argv
 
 import pinocchio
 import numpy as np
- 
-# This path refers to Pinocchio source code but you can define your own directory here.
-pinocchio_model_dir = Path(__file__).parent.parent / "traj_opti_jumping"
- 
-# You should change here to set up your own URDF file or just pass it as an argument of
-# this example.
-urdf_filename = (
-    pinocchio_model_dir / "assets/models/go2/go2.urdf"
-    if len(argv) < 2
-    else argv[1]
-)
- 
-# Load the urdf model
-model = pinocchio.buildModelFromUrdf(urdf_filename, pinocchio.JointModelFreeFlyer())
-robot = pinocchio.RobotWrapper(model)
-data = model.createData()
 
- 
-# Sample a random configuration
-# q = pinocchio.randomConfiguration(model)
-# q = np.array([0.0, 0.0, 0.4, 0.4, 
-#               0.0, 0.0, 0.0, 
-#               0.0, 0.95, -1.75, 
-#               0.0, 0.95, -1.75, 
-#               0.0, 0.95, -1.75, 
-#               0.0, 0.95, -1.75], dtype=np.double)
-# print(f"q: {q.T}")
+from kinematics import *
+from dynamics import *
+from robot import *
 
-base_xyz = np.array([0.0, 0.0, 0.3]) # init guess for z = 0.3 m
-base_quat = np.array([1.0, 0.0, 0.0, 0.0])
-joints = np.array([0.0, 0.95, -1.75] * 4)
-q = np.concatenate([base_xyz, base_quat, joints])
+q = getDefaultStandState(model, data)
+pinocchio.framesForwardKinematics(model, data, q)
 
-feet_names = ["FL_calf", "FR_calf", "RL_calf", "RR_calf"]
-feet_ids = [model.getFrameId(name) for name in feet_names]
+# print("Foot positions:")
+printEEPositions(model, data)
 
-# Desired foot positions in world frame (z=0)
-target_positions = {
-    "FL_calf": np.array([0.1934, 0.142, 0]),
-    "FR_calf": np.array([0.1934, -0.142, 0]),
-    "RL_calf": np.array([-0.1934, 0.142, 0]),
-    "RR_calf": np.array([-0.1934, -0.142, 0]),
-}
-
-# ====================
-# 3. Inverse Kinematics Setup
-# ====================
-def pose_error(q):
-    pinocchio.framesForwardKinematics(model, data, q)
-    error = []
-    for name, fid in zip(feet_names, feet_ids):
-        err = data.oMf[fid].translation - target_positions[name]
-        error.append(err)
-    return np.concatenate(error)
-
-# Solve IK to achieve desired foot positions
-from scipy.optimize import least_squares
-
-result = least_squares(
-    fun=pose_error,
-    x0=q,
-    method="trf",
-    max_nfev=100,
-    verbose=2,
-)
-
-q_optimized = result.x
-
-# ====================
-# 4. Adjust Base Height
-# ====================
-# Compute mean foot height and adjust base z
-pinocchio.framesForwardKinematics(model, data, q_optimized)
-foot_heights = [data.oMf[fid].translation[2] for fid in feet_ids]
-base_z_adjustment = -np.mean(foot_heights)
-q_optimized[2] += base_z_adjustment
-
-# Final check
-pinocchio.framesForwardKinematics(model, data, q_optimized)
-print("\nFinal foot positions:")
-for name, fid in zip(feet_names, feet_ids):
-    pos = data.oMf[fid].translation
-    print(f"{name}: {pos}")
-
-
-
-
-# Use frame ID to get transformation
-fl_foot_id = model.getFrameId("FL_calf")
-fr_foot_id = model.getFrameId("FR_calf")
-rl_foot_id = model.getFrameId("RL_calf")
-rr_foot_id = model.getFrameId("RR_calf")
-
-pinocchio.updateFramePlacement(model, data, fl_foot_id)
-fl_pose = data.oMf[fl_foot_id].translation
-print("FL foot position:", fl_pose)
-
-pinocchio.updateFramePlacement(model, data, fr_foot_id)
-fr_pose = data.oMf[fr_foot_id].translation
-print("FR foot position:", fr_pose)
-
-pinocchio.updateFramePlacement(model, data, rl_foot_id)
-rl_pose = data.oMf[rl_foot_id].translation
-print("RL foot position:", rl_pose)
-
-pinocchio.updateFramePlacement(model, data, rr_foot_id)
-rr_pose = data.oMf[rr_foot_id].translation
-print("RR foot position:", rr_pose)
-
-com = pinocchio.centerOfMass(model, data, q)
-print("Center of mass:", data.com[0])
-
-
-
-
-
-# def compute_feet_z(model, data, q, foot_frame_names):
-#     pinocchio.forwardKinematics(model, data, q)
-#     pinocchio.updateFramePlacements(model, data)
-#     return np.array([data.oMf[model.getFrameId(name)].translation[2] for name in foot_frame_names])
-
-# def solve_base_z(model, data, q, foot_frame_names, tol=1e-5, max_iter=20):
-#     for _ in range(max_iter):
-#         zs = compute_feet_z(model, data, q, foot_frame_names)
-#         mean_z = np.mean(zs)
-#         if abs(mean_z) < tol:
-#             break
-#         q[2] -= mean_z
-#     return q, zs
+exit()
 
 
 
 
 
 
-# exit()
+
+
+
+
 
 # vis via rerun
 import rerun as rr
@@ -167,11 +53,11 @@ print(robot_logger.joint_names)
 
 dt = 1.0
 
-r = np.array([0.0, 0.0, np.sin(0), np.cos(0)])
-print(r)
+# r = np.array([0.0, 0.0, np.sin(0), np.cos(0)])
+# print(r)
 
 base_position = [q[0], q[1], q[2]]
-base_orientation = r
+base_orientation = [q[3], q[4], q[5], q[6]]
 
 t1, t2, t3 = q[[7, 8, 9]]
 t4, t5, t6 = q[[10, 11, 12]]

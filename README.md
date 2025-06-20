@@ -4,10 +4,17 @@ Developing the first baseline of trajectory optimization for jumping controller.
 
 PROGRESS:
 
-6/19/2025
+6/20/2025
 - .
 - TODO:
   - .
+
+6/19/2025
+- Computing ground reation forces works well, verified and stored in dynamics.py.
+- Added bunch of print methods for the output. 
+- TODO:
+  - Use qp and id to make it stand solely and that can be iterated in the core controller.
+  - Start jumping.
 
 6/18/2025
 - computed the ground reaction forces at each contact point. + moments. However, there is a big force in x direction which reduce the amount of normal forces on z direction. 

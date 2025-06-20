@@ -206,11 +206,11 @@
   </joint>
 
   <!-- Front Left (FL) End-effector -jkim -->
-  <joint name="FL_ee_joint" type="fixed">
+  <joint name="FL_EE_joint" type="fixed">
     <parent link="FL_calf"/>
-    <child link="FL_ee"/>
+    <child link="FL_EE"/>
     <origin xyz="0 0 -0.1" rpy="0 0 0"/> </joint>
-  <link name="FL_ee">
+  <link name="FL_EE">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <mass value="0.001"/> <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
@@ -351,11 +351,11 @@
   </joint>
 
   <!-- Front Right (FR) End-effector -jkim -->
-  <joint name="FR_ee_joint" type="fixed">
+  <joint name="FR_EE_joint" type="fixed">
     <parent link="FR_calf"/>
-    <child link="FR_ee"/>
+    <child link="FR_EE"/>
     <origin xyz="0 0 -0.1" rpy="0 0 0"/> </joint>
-  <link name="FR_ee">
+  <link name="FR_EE">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <mass value="0.001"/> <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
@@ -496,11 +496,11 @@
   </joint>
 
   <!-- Rear Left (RL) End-effector -jkim -->
-  <joint name="RL_ee_joint" type="fixed">
+  <joint name="RL_EE_joint" type="fixed">
     <parent link="RL_calf"/>
-    <child link="RL_ee"/>
+    <child link="RL_EE"/>
     <origin xyz="0 0 -0.1" rpy="0 0 0"/> </joint>
-  <link name="RL_ee">
+  <link name="RL_EE">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <mass value="0.001"/> <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
@@ -641,11 +641,11 @@
   </joint>
 
   <!-- Rear Right (RR) End-effector -jkim -->
-  <joint name="RR_ee_joint" type="fixed">
+  <joint name="RR_EE_joint" type="fixed">
     <parent link="RR_calf"/>
-    <child link="RR_ee"/>
+    <child link="RR_EE"/>
     <origin xyz="0 0 -0.1" rpy="0 0 0"/> </joint>
-  <link name="RR_ee">
+  <link name="RR_EE">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <mass value="0.001"/> <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>

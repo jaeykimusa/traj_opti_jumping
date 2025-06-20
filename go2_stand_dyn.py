@@ -1,131 +1,22 @@
+# go2_stand_dyn.py
+
 from pathlib import Path
 from sys import argv
 
 import pinocchio
 import numpy as np
- 
+
+from kinematics import *
+from dynamics import *
+from robot import * 
 
 # =================================================================
 #   PRIMARY GOAL IS TO COMPUTE GROUND REACTION FORCE AT EACH FOOT
 # =================================================================
 
-# This path refers to Pinocchio source code but you can define your own directory here.
-pinocchio_model_dir = Path(__file__).parent.parent / "traj_opti_jumping"
- 
-# You should change here to set up your own URDF file or just pass it as an argument of
-# this example.
-urdf_filename = (
-    pinocchio_model_dir / "assets/models/go2/go2.urdf"
-    if len(argv) < 2
-    else argv[1]
-)
- 
-# Load the urdf model
-model = pinocchio.buildModelFromUrdf(urdf_filename, pinocchio.JointModelFreeFlyer())
-geom_model = pinocchio.buildGeomFromUrdf(model, urdf_filename, pinocchio.GeometryType.COLLISION)
-robot = pinocchio.RobotWrapper(model)
-data = model.createData()
-geom_data = geom_model.createData()
-
- 
-# print(geom_data)
-
-# exit()
-# Sample a random configuration
-# q = pinocchio.randomConfiguration(model)
-# q = np.array([0.0, 0.0, 0.4, 0.4, 
-#               0.0, 0.0, 0.0, 
-#               0.0, 0.95, -1.75, 
-#               0.0, 0.95, -1.75, 
-#               0.0, 0.95, -1.75, 
-#               0.0, 0.95, -1.75], dtype=np.double)
-# print(f"q: {q.T}")
-
-base_xyz = np.array([0.0, 0.0, 0.3]) # init guess for z = 0.3 m
-base_quat = np.array([1.0, 0.0, 0.0, 0.0])
-joints = np.array([0.0, 0.95, -1.75] * 4)
-q = np.concatenate([base_xyz, base_quat, joints])
-
-feet_names = ["FL_ee", "FR_ee", "RL_ee", "RR_ee"]
-feet_ids = [model.getFrameId(name) for name in feet_names]
-
-# Desired foot positions in world frame (z=0)
-target_positions = {
-    "FL_ee": np.array([0.1934, 0.142, 0]),
-    "FR_ee": np.array([0.1934, -0.142, 0]),
-    "RL_ee": np.array([-0.1934, 0.142, 0]),
-    "RR_ee": np.array([-0.1934, -0.142, 0]),
-}
-
-# ====================
-# 3. Inverse Kinematics Setup
-# ====================
-def pose_error(q):
-    pinocchio.framesForwardKinematics(model, data, q)
-    error = []
-    for name, fid in zip(feet_names, feet_ids):
-        err = data.oMf[fid].translation - target_positions[name]
-        error.append(err)
-    return np.concatenate(error)
-
-# Solve IK to achieve desired foot positions
-from scipy.optimize import least_squares
-
-result = least_squares(
-    fun=pose_error,
-    x0=q,
-    method="trf",
-    max_nfev=100,
-    verbose=2,
-)
-
-q_optimized = result.x
-
-# ====================
-# 4. Adjust Base Height
-# ====================
-# Compute mean foot height and adjust base z
-pinocchio.framesForwardKinematics(model, data, q_optimized)
-foot_heights = [data.oMf[fid].translation[2] for fid in feet_ids]
-base_z_adjustment = -np.mean(foot_heights)
-q_optimized[2] += base_z_adjustment
-
-# Final check
-pinocchio.framesForwardKinematics(model, data, q_optimized)
-print("\nFinal foot positions:")
-for name, fid in zip(feet_names, feet_ids):
-    pos = data.oMf[fid].translation
-    print(f"{name}: {pos}")
-
-
-
-
-# Use frame ID to get transformation
-fl_foot_id = model.getFrameId("FL_ee")
-fr_foot_id = model.getFrameId("FR_ee")
-rl_foot_id = model.getFrameId("RL_ee")
-rr_foot_id = model.getFrameId("RR_ee")
-
-pinocchio.updateFramePlacement(model, data, fl_foot_id)
-fl_pose = data.oMf[fl_foot_id].translation
-print("FL foot position:", fl_pose)
-
-pinocchio.updateFramePlacement(model, data, fr_foot_id)
-fr_pose = data.oMf[fr_foot_id].translation
-print("FR foot position:", fr_pose)
-
-pinocchio.updateFramePlacement(model, data, rl_foot_id)
-rl_pose = data.oMf[rl_foot_id].translation
-print("RL foot position:", rl_pose)
-
-pinocchio.updateFramePlacement(model, data, rr_foot_id)
-rr_pose = data.oMf[rr_foot_id].translation
-print("RR foot position:", rr_pose)
-
-com = pinocchio.centerOfMass(model, data, q)
-print("Center of mass:", data.com[0])
-
-
+# init
+q = getDefaultStandState(model, data)
+pinocchio.framesForwardKinematics(model, data, q)
 
 v = np.zeros(model.nv)
 a = np.zeros(model.nv)
@@ -139,24 +30,25 @@ feet_ids = [model.getFrameId(f"{leg}_ee") for leg in feet_names]
 bl_id = model.getFrameId("base_link")
 ncontacts = len(feet_names)
 
-Js__feet_q = [pinocchio.computeFrameJacobian(model, data, q, fid, pinocchio.WORLD) for fid in feet_ids]
-Js__feet_bl = [J[:3, :6] for J in Js__feet_q]
+Js__feet_q = [pinocchio.computeFrameJacobian(model, data, q, fid, pinocchio.LOCAL_WORLD_ALIGNED) for fid in feet_ids]
+print("he")
+# Js__feet_bl = [J[:3, :6] for J in Js__feet_q]
 
-Jc__feet_bl_T = np.vstack(Js__feet_bl).T # shapre: 5 x (3*ncontact)
-ls = np.linalg.pinv(Jc__feet_bl_T) @ g_bl  # Use matrix multiplication
-ls__f = np.split(ls, ncontacts)            # Split into per-foot forces
+# Jc__feet_bl_T = np.vstack(Js__feet_bl).T # shapre: 5 x (3*ncontact)
+# ls = np.linalg.pinv(Jc__feet_bl_T) @ g_bl  # Use matrix multiplication
+# ls__f = np.split(ls, ncontacts)            # Split into per-foot forces
 
-pinocchio.framesForwardKinematics(model, data, q)
-ls__bl = []
-for l__f, foot_id in zip(ls__f, feet_ids):
-    l__f_fixed = np.array(l__f, dtype=np.float64).reshape(3)
-    l_sp__f = pinocchio.Force(l__f_fixed, np.zeros(3, dtype=np.float64))
-    l_sp__bl = data.oMf[bl_id].actInv(data.oMf[foot_id].act(l_sp__f))
-    ls__bl.append(l_sp__bl.vector)
+# pinocchio.framesForwardKinematics(model, data, q)
+# ls__bl = []
+# for l__f, foot_id in zip(ls__f, feet_ids):
+#     l__f_fixed = np.array(l__f, dtype=np.float64).reshape(3)
+#     l_sp__f = pinocchio.Force(l__f_fixed, np.zeros(3, dtype=np.float64))
+#     l_sp__bl = data.oMf[bl_id].actInv(data.oMf[foot_id].act(l_sp__f))
+#     ls__bl.append(l_sp__bl.vector)
 
 
-for name, force in zip(feet_names, ls__bl):
-    print(f"Contact forces at {name}: {force}")
+# for name, force in zip(feet_names, ls__bl):
+#     print(f"Contact forces at {name}: {force}")
 
 
 

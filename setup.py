@@ -3,10 +3,11 @@ from setuptools import setup, find_packages
 setup(
     name='go2', # This is the name your package will be known by
     version='0.1.0', # A version number for your package
-    packages=find_packages(), # Automatically finds all packages and subpackages
-    # You can add other metadata here if you want, like:
     author='Jaeyoon Kim',
     author_email='jkim232@ncsu.edu',
+    packages=find_packages(), # Automatically finds all packages and subpackages
+    # You can add other metadata here if you want, like:
+
     # description='A Python package for Go2 robot simulations',
     # long_description=open('README.md').read(),
     # long_description_content_type='text/markdown',

@@ -4,7 +4,7 @@
 archieved/
 build/
 
-# Environments
+# Environments / package
 .env
 .venv
 env/
@@ -13,9 +13,15 @@ ENV/
 env.bak/
 venv.bak/
 
+# Conda-specific
+.conda/
+
+
 ### Python ###
+# Python-specific
 # Bytecode-compiled 
 __pycache__/
+*.pyc
 
 # Distribution / packaging
 .Python
@@ -39,9 +45,10 @@ MANIFEST
 
 
 ### maxOS ###
-# Attribute directory
+# Attribute directory / operating system files
 .DS_Store
 
 
 ### VisualStudioCode ###
+# vsvode-specific
 .vscode/*

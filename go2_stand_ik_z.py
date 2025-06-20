@@ -4,9 +4,9 @@ from sys import argv
 import pinocchio
 import numpy as np
 
-from kinematics import *
-from dynamics import *
-from robot import *
+from go2.kinematics.kinematics import *
+from go2.dynamics.dynamics import *
+from go2.robot.robot import *
 
 q = getDefaultStandState(model, data)
 pinocchio.framesForwardKinematics(model, data, q)

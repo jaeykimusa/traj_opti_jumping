@@ -1,7 +1,7 @@
 # dynamics.py
 import pinocchio as pin
-from robot import *
-from math_utils import *
+from go2.robot.robot import *
+from go2.utils.math_utils import *
 
 def computeJointTorques(model, data, q, qd, qdd):
     return pin.rnea(model, data, q, qd, qdd).reshape(-1,1) # 18 x 1 

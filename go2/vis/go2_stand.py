@@ -6,10 +6,10 @@ from sys import argv
 import pinocchio as pin
 import numpy as np
 
-from kinematics import *
-from dynamics import *
-from robot import * 
-from math_utils import *
+from go2.kinematics.kinematics import *
+from go2.dynamics.dynamics import *
+from go2.robot.robot import * 
+from go2.utils.math_utils import *
 # from morphology import *
 
 # =================================================================
@@ -28,7 +28,7 @@ qdd = np.zeros(model.nv)
 
 Fc = computeFullContactForces(model, data, q, qd, qdd)
 
-
+printContactForces(Fc)
 
 # i = Frame.FL_EE + 0
 # print(i)

@@ -6,9 +6,9 @@ from sys import argv
 import pinocchio
 import numpy as np
 
-from kinematics import *
-from dynamics import *
-from robot import * 
+from go2.kinematics.kinematics import *
+from go2.dynamics.dynamics import *
+from go2.robot.robot import * 
 
 # =================================================================
 #   PRIMARY GOAL IS TO COMPUTE GROUND REACTION FORCE AT EACH FOOT

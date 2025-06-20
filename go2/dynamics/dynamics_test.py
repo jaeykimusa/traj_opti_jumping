@@ -1,8 +1,8 @@
 # dynamics_test.py
 
 import unittest
-from dynamics import *
-from kinematics import *
+from go2.dynamics.dynamics import *
+from go2.kinematics.kinematics import *
 import pinocchio as pin
 
 class TestDynamics(unittest.TestCase):

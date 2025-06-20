@@ -21,6 +21,8 @@ venv.bak/
 # Python-specific
 # Bytecode-compiled 
 __pycache__/
+/__pycache__
+**/__pycache__
 *.pyc
 
 # Distribution / packaging

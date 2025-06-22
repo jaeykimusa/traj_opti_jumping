@@ -70,16 +70,17 @@ Jc = computeContactJacobian(model, data, q)
 A_eq_upper = np.hstack([B_term, M_term, Jc.T])
 A_eq_lower = np.hstack([A_eq_zeros_block, Jc, A_eq_zeros_block])
 A_eq = np.vstack([A_eq_upper, A_eq_lower])
-printSize(A_eq)
+# printSize(A_eq)
 b_eq = getZerosMatrix(30, 1)
 b_eq_upper = getZerosMatrix(18, 1)
 b_eq_lower = getZerosMatrix(12, 1)
 b_eq_upper = CG_terms
 Jdc = computeContactJacobiansTimeVariation(q, qd)
-b_eq_lower = -Jdc * qd
-b_eq = np.vstack([b_eq_upper, b_eq_lower])
+b_eq_lower = np.reshape(-Jdc @ qd, (-1, 1))
+# b_eq = np.vstack([b_eq_upper, b_eq_lower])
+b_eq = np.concatenate([b_eq_upper.flatten(), b_eq_lower.flatten()])
 
-
+printSize(b_eq)
 
 # inequality constraints: Ax <= b
 A_ineq = getZerosMatrix(20, 42)
@@ -109,11 +110,39 @@ x_min = np.vstack([np.full((12, 1), -15), getZerosMatrix(30, 1)])
 x_max = np.vstack([np.full((12, 1), 15), getZerosMatrix(30, 1)])
 
 A_full = np.vstack([A_eq, A_ineq])
-x_min_full = np.hstack([b_eq, -100000000000]) # infinity lower bounds for inequality constraints
-x_max_full = np.hstack([b_eq, b_ineq])
+# x_min_full = np.hstack([b_eq, -100000000000]) # infinity lower bounds for inequality constraints
+# x_max_full = np.hstack([b_eq, b_ineq])
 
+# Convert to sparse matrices
+Q_cost = sp.csc_matrix(Q_cost)
 
-idqp.setup(P=Q_cost, q=c_cost.T, A=A_full, l=x_min_full, u=x_max_full, verbose=False)
+# Build A matrix by stacking all constraints:
+# Equality (A_eq x = b_eq)
+# Inequality (A_ineq x <= b_ineq → -inf ≤ A_ineq x ≤ b_ineq)
+# Box constraints (I x ≤ x_max and -I x ≤ -x_min → x_min ≤ x ≤ x_max)
+A = sp.vstack([
+    A_eq,             # equality
+    A_ineq,           # inequality
+    sp.eye(42),       # x <= x_max
+    -sp.eye(42)       # -x <= -x_min → x >= x_min
+]).tocsc()
+
+# Build l and u
+l = np.hstack([
+    b_eq,                           # equality
+    -np.inf * np.ones(20),         # no lower bound for inequality
+    -np.inf * np.ones(42),         # x <= x_max
+    -x_max                         # -x <= -x_max → x >= x_min
+])
+
+u = np.hstack([
+    b_eq,                           # equality
+    b_ineq,                         # inequality upper bounds
+    x_max,                          # x <= x_max
+    -x_min                          # -x >= -x_min → x <= x_max
+])
+
+idqp.setup(P=Q_cost, q=c_cost.T, A=A_full, l=u, u=l, verbose=False)
 idqp_sol = idqp.solve()
 sol_x = idqp_sol.x
 u = sol_x[:NUM_U]

@@ -75,3 +75,36 @@ def printContactForces(*args):
         print(f"Force at RR_EE: {Fc_RR[0]:.3f} {Fc_RR[1]:.3f} {Fc_RR[2]:.3f}")
     else:
         raise ValueError("Expected 1 or 4 arguments.")
+
+def computeContactJacobiansTimeVariation(q, qd):
+    # J_FL = pin.getFrameJacobian(model, data, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)
+    # Jd_FL = pin.getFrameJacobianTimeVariation(model, data, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)
+    # Jd_FL = Jd_FL[:3, :]
+    # J_FR = pin.getFrameJacobian(model, data, Frame.FR_EE, pin.LOCAL_WORLD_ALIGNED)
+    # Jd_FR = pin.getFrameJacobianTimeVariation(model, data, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)
+    # Jd_FR = Jd_FL[:3, :]
+    # J_RL = pin.getFrameJacobian(model, data, Frame.RL_EE, pin.LOCAL_WORLD_ALIGNED)
+    # Jd_RL = pin.getFrameJacobianTimeVariation(model, data, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)
+    # Jd_RL = Jd_FL[:3, :]
+    # J_RR = pin.getFrameJacobian(model, data, Frame.RR_EE, pin.LOCAL_WORLD_ALIGNED)
+    # Jd_RR = pin.getFrameJacobianTimeVariation(model, data, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)
+    # Jd_RR = Jd_FL[:3, :]
+    # Jd = np.vstack([Jd_FL, Jd_FR, Jd_RL, Jd_RR])
+
+    pin.computeJointJacobiansTimeVariation(model, data, q, qd)
+    Jd_FL_EE = pin.getFrameJacobianTimeVariation(model, data, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)
+    Jd_FL_EE = Jd_FL_EE[:3, :]
+    Jd_FR_EE = pin.getFrameJacobianTimeVariation(model, data, Frame.FR_EE, pin.LOCAL_WORLD_ALIGNED)
+    Jd_FR_EE = Jd_FR_EE[:3, :]
+    Jd_RL_EE = pin.getFrameJacobianTimeVariation(model, data, Frame.RL_EE, pin.LOCAL_WORLD_ALIGNED)
+    Jd_RL_EE = Jd_RL_EE[:3, :]
+    Jd_RR_EE = pin.getFrameJacobianTimeVariation(model, data, Frame.RR_EE, pin.LOCAL_WORLD_ALIGNED)
+    Jd_RR_EE = Jd_RR_EE[:3, :]
+    Jd = np.vstack([Jd_FL_EE, Jd_FR_EE, Jd_RL_EE, Jd_RR_EE])
+    return Jd
+
+def getMassInertiaMatrix(q):
+    return pin.crba(model, data, q)
+
+def getCoriolisGravity(q, qd, qdd):
+    return pin.rnea(model, data, q, qd, qdd)

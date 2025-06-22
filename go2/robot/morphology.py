@@ -40,6 +40,10 @@ class Frame(IntEnum):
     RR_EE_joint = 33
     RR_EE =34
 
+NUM_Q = 18
+NUM_U = 12
+NUM_F = 12
+NUM_C = 4
 
 # [0] universe — type: FIXED_JOINT
 # [1] root_joint — type: JOINT

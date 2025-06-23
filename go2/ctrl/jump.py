@@ -35,6 +35,7 @@ print(os.path.abspath(os.getcwd()))
 jump_path = os.path.join(os.path.dirname(__file__), "q_ref_forward_jump.txt")
 q_ref = np.loadtxt(jump_path, delimiter=',')
 
+printSize(q_ref)
 
 # exit()
 
@@ -45,12 +46,15 @@ from go2.mpac_logging.mpac_logging import robot_zoo
 from go2.mpac_logging.mpac_logging.rerun.robot_logger import RobotLogger
 from go2.mpac_logging.mpac_logging.rerun.utils import rerun_initialize, rerun_store
 
+rr.init("simple_robot_example", spawn=False)
 # robot_logger = RobotLogger.from_zoo("go2")
 robot_logger = RobotLogger.from_zoo("go2_description")
 
 import time
 
 rerun_initialize("2.5 forward jump test", spawn=True)
+print("works")
+
 current_time = time.time()
 # robot_logger.log_initial_state(logtime=current_time)
 

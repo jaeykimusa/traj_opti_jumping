@@ -37,6 +37,7 @@ from go2.mpac_logging.mpac_logging.rerun.utils import rerun_initialize, rerun_st
 import time
 from scipy.spatial.transform import Rotation as R
 
+# rr.init("simple_robot_example", spawn=True)
 # robot_logger = RobotLogger.from_zoo("go2")
 robot_logger = RobotLogger.from_zoo("go2_description")
 
@@ -51,8 +52,8 @@ for i in range(100):
 
     base_position = q_i[:3]
     # base_orientation = q_i[3,7]
-    # base_orientation = np.roll(q_i[3:7], -1)
-    base_orientation = np.array([0.0, 0.0, np.sin(0), np.cos(0)])
+    base_orientation = np.roll(q_i[3:7], -1)
+    # base_orientation = np.array([0.0, 0.0, np.sin(0), np.cos(0)])
 
     q_FL1 = q_i[7]
     q_FL2 = q_i[8]

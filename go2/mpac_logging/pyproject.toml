@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mpac_logging"
+version = "0.0.2"
+dependencies = [
+    "ruff==0.9.7",
+    "pre-commit",
+    "scipy",
+    "lxml",
+    "rerun-sdk==0.23.1", # for numpy 1.x.x support
+    "trimesh",
+    "robot_descriptions",
+    "urdfdom-py @ git+https://github.com/ros/urdf_parser_py.git",
+    "yourdfpy",
+]
+
+[tool.ruff]
+# Same as Black.
+line-length = 120
+indent-width = 2
+
+[tool.ruff.lint]
+ignore = ["E731"]
+exclude = [
+    "3rdparty/*"
+]

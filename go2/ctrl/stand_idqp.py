@@ -40,7 +40,7 @@ num_var = NUM_U + NUM_Q + NUM_C * 3
 mu = 0.8
 
 # decision variables, let x = [u, qdd, f].T
-x = getZerosMatrix(num_var, 1)
+# x = getZerosMatrix(num_var, 1)
 # Hessian matrix, error weight for the quadratic cost
 Q_cost = getZerosMatrix(num_var, num_var)
 for i in range(0, NUM_U):
@@ -79,8 +79,6 @@ Jdc = computeContactJacobiansTimeVariation(q, qd)
 b_eq_lower = np.reshape(-Jdc @ qd, (-1, 1))
 # b_eq = np.vstack([b_eq_upper, b_eq_lower])
 b_eq = np.concatenate([b_eq_upper.flatten(), b_eq_lower.flatten()])
-
-printSize(b_eq)
 
 # inequality constraints: Ax <= b
 A_ineq = getZerosMatrix(20, 42)
@@ -125,29 +123,66 @@ A = sp.vstack([
     A_ineq,           # inequality
     sp.eye(42),       # x <= x_max
     -sp.eye(42)       # -x <= -x_min → x >= x_min
-]).tocsc()
-
-# Build l and u
-l = np.hstack([
-    b_eq,                           # equality
-    -np.inf * np.ones(20),         # no lower bound for inequality
-    -np.inf * np.ones(42),         # x <= x_max
-    -x_max                         # -x <= -x_max → x >= x_min
 ])
 
-u = np.hstack([
-    b_eq,                           # equality
-    b_ineq,                         # inequality upper bounds
-    x_max,                          # x <= x_max
-    -x_min                          # -x >= -x_min → x <= x_max
-])
+# printSize(A)
+# b_eq = b_eq.reshape((-1, 1))
 
-idqp.setup(P=Q_cost, q=c_cost.T, A=A_full, l=u, u=l, verbose=False)
+
+# # Build l and u
+# l = np.vstack([
+#     b_eq,                          # equality
+#     -np.inf * np.ones((20, 1)),    # no lower bound for inequality
+#     -np.inf * np.ones((42, 1)),    # x <= x_max
+#     -x_max                         # -x <= -x_max → x >= x_min
+# ])
+
+# printSize(c_cost.T)
+
+
+# u = np.vstack([
+#     b_eq,                           # equality
+#     b_ineq,                         # inequality upper bounds
+#     x_max,                          # x <= x_max
+#     -x_min                          # -x >= -x_min → x <= x_max
+# ])
+
+# printSize(l)
+# printSize(u)
+
+# Ensure all are column vectors
+b_eq     = b_eq.reshape((-1, 1))     # (30, 1)
+b_ineq   = b_ineq.reshape((-1, 1))   # (20, 1)
+x_min    = x_min.reshape((-1, 1))    # (42, 1)
+x_max    = x_max.reshape((-1, 1))    # (42, 1)
+
+# Stack vertically → shape (134, 1)
+l = np.vstack([
+    b_eq,
+    -np.inf * np.ones((20, 1)),
+    -np.inf * np.ones((42, 1)),
+    -x_max
+]).flatten()  # shape (134,)
+
+u = np.vstack([
+    b_eq,
+    b_ineq,
+    x_max,
+    -x_min
+]).flatten()  # shape (134,)
+
+idqp.setup(P=Q_cost, q=c_cost.flatten(), A=A, l=l, u=u, verbose=False)
+
 idqp_sol = idqp.solve()
 sol_x = idqp_sol.x
-u = sol_x[:NUM_U]
-qdd = sol_x[NUM_U:NUM_U+NUM_Q]
-F = sol_x[NUM_U+NUM_Q:] #.reshape(NUM_C, 3)
+u_sol = sol_x[:NUM_U]
+qdd_sol = sol_x[NUM_U:NUM_U+NUM_Q]
+f_sol = sol_x[NUM_U+NUM_Q:] #.reshape(NUM_C, 3)
+print(u_sol)
+print(qdd_sol)
+print(f_sol)
+print("\n")
+print(sol_x)
 
 
 # Jcd = computeContactJacobiansTimeVariation(model, data, q, qd)

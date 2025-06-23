@@ -55,7 +55,7 @@ print("he")
 
 
 
-exit()
+# exit()
 
 # vis via rerun
 import rerun as rr

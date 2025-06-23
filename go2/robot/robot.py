@@ -21,3 +21,34 @@ geom_model = pin.buildGeomFromUrdf(model, urdf_filename, pin.GeometryType.COLLIS
 robot = pin.RobotWrapper(model)
 data = model.createData()
 geom_data = geom_model.createData()
+
+
+
+
+
+# pin.forwardKinematics(model, data, q)
+# pin.updateFramePlacements(model, data)
+
+# FL_thigh_pos = data.oMf[Frame.FL_thigh].translation
+# FL_calf_pos = data.oMf[Frame.FL_calf].translation
+# FL_thigh_length = np.linalg.norm(FL_calf_pos - FL_thigh_pos)
+# print(f"Thigh_length: {FL_thigh_length:.5f} m")
+
+# FL_EE_pos = data.oMf[Frame.FL_EE].translation
+# print(FL_calf_pos)
+# print(FL_EE_pos)
+# FL_calf_length = np.linalg.norm(FL_thigh_pos - FL_EE_pos)
+# print(f"Calf_length: {FL_calf_length:.5f} m")
+
+# RL_thigh_pos = data.oMf[Frame.RL_thigh].translation
+# L_body_length = np.linalg.norm(RL_thigh_pos - FL_thigh_pos)
+# print(f"Body_length 1: {L_body_length:.5f} m")
+
+# FR_thigh_pos = data.oMf[Frame.FR_thigh].translation
+# RR_thigh_pos = data.oMf[Frame.RR_thigh].translation
+# R_body_length = np.linalg.norm(RR_thigh_pos - FR_thigh_pos)
+# print(f"Body_length 2: {R_body_length:.5f} m")
+# print(2 * 0.1934)
+
+
+

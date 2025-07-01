@@ -4,10 +4,17 @@ Developing the first baseline of trajectory optimization for jumping controller.
 
 PROGRESS:
 
-6/20/2025
+7/1/2025
 - .
 - TODO:
-  - .
+  - 
+
+6/30/2025
+- Abstract--
+- TODO:
+  - continue using srbd to compute reference trajectory and implement contact timing optimization in that process.
+  - determine the best variable frequency maneuver.
+  - whole-body controller for landing phase.
 
 6/19/2025
 - Computing ground reation forces works well, verified and stored in dynamics.py.

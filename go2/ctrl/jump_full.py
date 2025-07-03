@@ -48,9 +48,13 @@ Q = opti.variable(NUM_Q, N)
 V = opti.variable(NUM_Q, N)
 U = opti.variable(NUM_Q, N - 1)
 
+# set initial and final config
 q_init = q_ref[:,1]
-printSize(q_init)
-
 qd_init = np.zeros((NUM_Q))
-printSize(qd_init)
 q_final = q_ref[:, N - 1]
+qd_final = np.zeros((NUM_Q))
+
+
+
+
+

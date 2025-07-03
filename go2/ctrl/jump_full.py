@@ -12,6 +12,7 @@ from go2.robot.robot import *
 from go2.utils.math_utils import *
 # from go2.utils.io_utils import *
 import casadi as ca
+import matplotlib.pyplot as plt
 
 # =================================================================
 #   PRIMARY GOAL IS TO OPTIMIZE FULL BODY TRAJECTORY
@@ -63,7 +64,36 @@ for i in range(getColumnSize(q_ref)):
 
 
 
-print(qd_ref)
+# print(qd_ref)
+
+plt.plot(qd_ref[0], label=f"x")
+plt.plot(qd_ref[1], label=f"y")
+plt.plot(qd_ref[2], label=f"z")
+plt.title("CoM Spatial Acceleration")
+plt.xlabel("Time")
+plt.ylabel("Acceleartion")
+plt.legend()
+plt.show()
+
+plt.plot(qd_ref[3], label=f"rx")
+plt.plot(qd_ref[4], label=f"ry")
+plt.plot(qd_ref[5], label=f"rz")
+plt.title("CoM Angular Acceleration")
+plt.xlabel("Time")
+plt.ylabel("Acceleartion")
+plt.legend()
+plt.show()
+
+plt.plot(qd_ref[6], label=f"FL1")
+plt.plot(qd_ref[7], label=f"FL2")
+plt.plot(qd_ref[8], label=f"FL3")
+plt.title("FL Joint Acceleration")
+plt.xlabel("Time")
+plt.ylabel("Acceleartion")
+plt.legend()
+plt.show()
+
+exit()
 
 # cost function
 cost_func = 0

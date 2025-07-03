@@ -8,26 +8,20 @@ from go2.kinematics.kinematics import *
 from go2.dynamics.dynamics import *
 from go2.robot.robot import *
 
-q = getDefaultStandState(model, data)
-# pinocchio.framesForwardKinematics(model, data, q)
+# q = getDefaultStandState(model, data)
+# # pinocchio.framesForwardKinematics(model, data, q)
 
-# # print("Foot positions:")
-# printEEPositions(model, data)
+# # # print("Foot positions:")
+# # printEEPositions(model, data)
 
-# exit()
-
-
-pin.forwardKinematics(model, data, q)
-pin.updateFramePlacements(model, data)
+# # exit()
 
 
-# base_xyz = np.array([0.0, 0.0, 0.3]) # init guess for z = 0.3 m
-# base_quat = np.array([1.0, 0.0, 0.0, 0.0])
-# joints = np.array([0.0, 0.95, -1.75] * 4)
-# q = np.concatenate([base_xyz, base_quat, joints])
+# pin.forwardKinematics(model, data, q)
+# pin.updateFramePlacements(model, data)
 
 
-# exit()
+exit()
 
 # vis via rerun
 import rerun as rr

@@ -9,7 +9,7 @@ import trimesh
 import yourdfpy
 from urdf_parser_py import urdf as urdf_parser
 
-from mpac_logging import robot_zoo
+from go2.mpac_logging.mpac_logging import robot_zoo
 
 import logging
 

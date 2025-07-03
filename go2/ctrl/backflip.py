@@ -1,4 +1,4 @@
-# jump.py
+# backflip.py
 
 from pathlib import Path
 from sys import argv
@@ -12,7 +12,7 @@ from go2.robot.robot import *
 from go2.utils.math_utils import *
 
 # =================================================================
-#   PRIMARY GOAL IS TO SOLVE IPOPT TO JUMP FORWARD
+#   PRIMARY GOAL IS TO SOLVE IPOPT TO BACKFLIP
 # =================================================================
 
 import os
@@ -32,7 +32,7 @@ qdd = np.zeros(model.nv)
 
 # READFILE: calculated reference q for 2.5 m forward jump
 print(os.path.abspath(os.getcwd()))
-jump_path = os.path.join(os.path.dirname(__file__), "q_ref_2m_forward_jump.txt")
+jump_path = os.path.join(os.path.dirname(__file__), "q_ref_backflip_jump.txt")
 q_ref = np.loadtxt(jump_path, delimiter=',')
 
 q_ref = interpolateMatrixToTargetColumns(q_ref, 1000)

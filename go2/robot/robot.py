@@ -4,6 +4,7 @@ from enum import Enum, auto
 
 import pinocchio as pin
 from .morphology import *
+import numpy as np
 
 # This path refers to pin source code but you can define your own directory here.
 pin_model_dir = Path(__file__).parent.parent / "robot/go2_description"

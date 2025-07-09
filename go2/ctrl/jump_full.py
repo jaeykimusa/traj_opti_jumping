@@ -66,6 +66,8 @@ if (getRowSize(q_ref) == 7):
 # printSize(q_ref)
 
 
+robot_logger.log_state(q_ref[:, 0])
+
 
 
 # getting the spatial and joint velocities -- maybe this won't work
@@ -122,6 +124,8 @@ f = ca.SX.sym("f", NUM_F)
 # opti init
 opti = ca.Opti()
 
+# n = q_ref.shape[1]
+
 Q = opti.variable(NUM_Q, N)
 V = opti.variable(NUM_Q, N)
 U = opti.variable(NUM_U, N - 1)
@@ -148,16 +152,14 @@ v_i = V[:, 1]
 u_i = U[:, 1]
 f_i = F[:, 1]
 
-qdd_i = fd(q_ref[:,3], qd_ref[:,3], None, U[:,1], F[:,1])
-printSize(qdd_i)
-
-exit()
+# qdd_i = fd(q_ref[:,3], qd_ref[:,3], None, U[:,1], F[:,1])
+# printSize(qdd_i)
 
 
 for i in range(N):
 
     q_i = Q[:, i]
-    qd_i = V[:, 1]
+    qd_i = V[:, i]
     u_i = U[:, i]
     f_i = F[:, i]
 
@@ -168,23 +170,8 @@ for i in range(N):
 for i in range(N):
     
     # dynamics constraints
-    opti.subject_to()
-
-    if (0 <= i < 30):
-        # add forces on 4 ee
-        opti.subject_to()
-    
-    if (30 <= i < 40):
-        opti.subject_to()
-
-    if (40 <= i < 75):
-        opti.subject_to()
-    
-    if (75 <= i < 100):
-        opti.subject_to()
-        
-         
-
+    opti.subject_to() 
+ 
     if STANCE_PHASE_0 <= i < STANCE_PHASE_1:
         # stand phase to set its orientation before take off
         opti.subject_to()
@@ -196,6 +183,7 @@ for i in range(N):
     if FLIGHT_PHASE_0 <= i < FLIGHT_PHASE_1:
         # flight mode
         opti.subject_to()
+
     if LANDING_PHASE_0 <= i < LANDING_PHASE_1:
         # is in landing phase
         # TODO: how the robot detect if it's landing? How does it know if any of its legs are in contact?

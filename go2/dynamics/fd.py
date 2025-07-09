@@ -127,4 +127,8 @@ def fd(q, qd, qdd=None, u=None, f=None):
     tau = B @ u + Jc.T @ f - b
     qdd_out = ca.solve(M, tau)
 
-    return qdd_out
+    return qdd_out 
+
+
+
+

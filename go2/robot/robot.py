@@ -3,7 +3,7 @@ from sys import argv
 from enum import Enum, auto
 
 import pinocchio as pin
-from .morphology import *
+from go2.robot.morphology import *
 import numpy as np
 
 # This path refers to pin source code but you can define your own directory here.
@@ -22,6 +22,11 @@ geom_model = pin.buildGeomFromUrdf(model, urdf_filename, pin.GeometryType.COLLIS
 robot = pin.RobotWrapper(model)
 data = model.createData()
 geom_data = geom_model.createData()
+
+# symbolic term
+from pinocchio.casadi import Model as CasadiModel
+model_casadi = CasadiModel(model)  
+data_casadi = model_casadi.createData()
 
 
 

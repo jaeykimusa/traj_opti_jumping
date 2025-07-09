@@ -2,6 +2,7 @@
 
 import numpy as np
 from scipy.interpolate import interp1d
+import casadi as ca
 
 def getPseudoInverse(A):
     return np.linalg.pinv(A)
@@ -60,3 +61,39 @@ def interpolateMatrixToTargetColumns(original_matrix, target_columns):
         interpolated_matrix[i, :] = interp_func(new_x)
 
     return interpolated_matrix
+
+
+def convert_3Drot_to_quat(q_partial):
+    """
+    Convert 3D config vector (with 3D rotation) to 4D quaternion vector for floating base.
+    q_partial: [pos(3), rotvec(3), joint(n-6)] → (18,)
+    return: [pos(3), quat(4), joint(n-6)] → (19,)
+    Accepts CasADi symbolic or NumPy input.
+    """
+    assert q_partial.shape[0] == 18, "Expected 18-element vector"
+
+    pos = q_partial[0:3]
+    rotvec = q_partial[3:6]
+    joint = q_partial[6:]
+
+    # Handle CasADi symbolic types
+    if isinstance(q_partial, (ca.SX, ca.MX)):
+        angle = ca.norm_2(rotvec)
+        axis = rotvec / (angle + 1e-8)
+        quat = ca.vertcat(ca.cos(angle / 2), axis * ca.sin(angle / 2))
+        q_full = ca.vertcat(pos, quat, joint)
+
+    # Handle NumPy numeric input
+    elif isinstance(q_partial, np.ndarray):
+        angle = np.linalg.norm(rotvec)
+        if angle < 1e-8:
+            quat = np.array([1.0, 0.0, 0.0, 0.0])
+        else:
+            axis = rotvec / angle
+            quat = np.concatenate([[np.cos(angle / 2)], axis * np.sin(angle / 2)])
+        q_full = np.concatenate([pos, quat, joint])
+
+    else:
+        raise TypeError(f"Unsupported type for q_partial: {type(q_partial)}")
+
+    return q_full

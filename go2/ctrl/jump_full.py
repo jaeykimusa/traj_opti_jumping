@@ -31,6 +31,10 @@ N = 100
 jump_path = os.path.join(os.path.dirname(__file__), "q_ref_forward_jump.txt")
 q_ref = np.loadtxt(jump_path, delimiter=',')
 # q_ref = interpolateMatrixToTargetColumns(q_ref, 1000)
+jump_path = os.path.join(os.path.dirname(__file__), "v_ref.txt")
+v_ref = np.loadtxt(jump_path, delimiter=',')
+jump_path = os.path.join(os.path.dirname(__file__), "u_ref.txt")
+u_ref = np.loadtxt(jump_path, delimiter=',')
 
 # printSize(q_ref)
 if (getRowSize(q_ref) == 7):
@@ -71,6 +75,7 @@ cost_func = 0
 # decision variables
 q = ca.SX.sym("q", NUM_Q)
 qd = ca.SX.sym("qd", NUM_Q)
+qdd = ca.SX.sym("qdd", NUM_Q)
 u = ca.SX.sym("u", NUM_U)
 
 # opti init
@@ -88,5 +93,23 @@ qd_final = qd_ref[: N - 1]
 
 
 
+for i in range(N):
+    
+    # dynamics constraints
+    opti.subject_to()
 
+    if (0 <= i < 30):
+        # add forces on 4 ee
+        opti.subject_to()
+    
+    if (30 <= i < 40):
+        opti.subject_to()
+
+    if (40 <= i < 75):
+        opti.subject_to()
+    
+    if (75 <= i < 100):
+        opti.subject_to()
+        
+         
 

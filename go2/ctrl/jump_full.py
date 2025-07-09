@@ -64,7 +64,7 @@ if (getRowSize(q_ref) == 7):
 
 
 
-# getting the spatial and joint velocities
+# getting the spatial and joint velocities -- maybe this won't work
 qd_ref = getZerosMatrix(getRowSize(q_ref), getColumnSize(q_ref))
 for i in range(getColumnSize(q_ref)):
     if i == 0 or i == getColumnSize(q_ref) - 1:
@@ -164,20 +164,20 @@ for i in range(N):
 
     if STANCE_PHASE_0 <= i < STANCE_PHASE_1:
         # stand phase to set its orientation before take off
-        opti.subject_to(getMassInertiaMatrix(Q[:, i]))
+        opti.subject_to()
 
     if TAKE_OFF_PHASE_0 <= i < TAKE_OFF_PHASE_1:
         # take off
-        opti.subject_to(getMassInertiaMatrix(Q[:, i]))
+        opti.subject_to()
 
     if FLIGHT_PHASE_0 <= i < FLIGHT_PHASE_1:
         # flight mode
-        opti.subject_to(getMassInertiaMatrix(Q[:, i]))
+        opti.subject_to()
     if LANDING_PHASE_0 <= i < LANDING_PHASE_1:
         # is in landing phase
         # TODO: how the robot detect if it's landing? How does it know if any of its legs are in contact?
         # TODO: apply whole-body control when landing for stability
-        opti.subject_to(getMassInertiaMatrix(Q[:, i]))
+        opti.subject_to()
 
 for i in range(N):
     cost_func += 1

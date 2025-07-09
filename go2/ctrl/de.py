@@ -49,9 +49,9 @@ model = pin.buildModelFromUrdf(urdf_filename, joint_model)
 robot = pin.RobotWrapper(model)
 data = model.createData()
 
-q = np.linspace(1, 10, 18)
-v = np.linspace(1, 10, 18)
-tau = np.linspace(1, 10, 18)
+q = np.linspace(0, 1, 18)
+v = np.linspace(0, 1, 18)
+tau = np.linspace(0, 1, 18)
 
 cs_q = ca.SX.sym("q", NUM_Q, 1)
 cs_v = ca.SX.sym("qd", NUM_Q, 1)
@@ -70,7 +70,7 @@ eval_aba = ca.Function("eval_aba", [cs_q, cs_v, cs_tau], [a_ad])
 # a_casadi_res = eval_aba(q, v, tau)
 
 # # Eval ABA using classic Pinocchio model
-# pin.aba(model, data, q, v, tau)
+pin.aba(model, data, q, v, tau)
 
 # Print both results
 # print("pinocchio double:\n\ta =", data.ddq.T)
@@ -96,21 +96,22 @@ ddq_desired = opti.parameter(NUM_Q, 1)
 
 ddq_sym = eval_aba(q_opt, v_opt, u_opt)
 
-cost = ca.sumsqr(ddq_sym - ddq_desired) * 100.0 \
-       + ca.sumsqr(q_opt - q_desired) * 1e-3 \
-       + ca.sumsqr(v_opt - v_desired) * 1e-3 \
-       + ca.sumsqr(u_opt - u_desired) * 1e-4
+cost = ca.sumsqr(ddq_sym - ddq_desired) * 10.0 \
+       + ca.sumsqr(q_opt - q_desired) * 42 \
+       + ca.sumsqr(v_opt - v_desired) * 42 \
+       + ca.sumsqr(u_opt - u_desired) * 42
 
 opti.minimize(cost)
 
-opti.subject_to(q_opt >= model.lowerPositionLimit)
-opti.subject_to(q_opt <= model.upperPositionLimit)
 opti.subject_to(v_opt >= -np.ones((NUM_Q,1)) * 50) # Example: +/- 50 rad/s or m/s
 opti.subject_to(v_opt <= np.ones((NUM_Q,1)) * 50)
-opti.subject_to(u_opt >= -np.ones((NUM_Q,1)) * 100) # Example: +/- 100 Nm
-opti.subject_to(u_opt <= np.ones((NUM_Q,1)) * 100)
+opti.subject_to(u_opt >= -np.ones((NUM_Q,1)) * 10000) # Example: +/- 100 Nm
+opti.subject_to(u_opt <= np.ones((NUM_Q,1)) * 10000)
 
 ddq_desired_numerical = data.ddq
+# print(data.ddq)
+# print(":)")
+# exit()
 q_nominal_numerical = q
 v_nominal_numerical = v
 u_nominal_numerical = tau
@@ -144,7 +145,7 @@ u_optimal = sol.value(u_opt)
 cost_optimal = sol.value(cost)
 
 numerical_data = model.createData()
-pin.aba(model, numerical_data, q_optimal, v_optimal, u_optimal)
+pin.aba(model, numerical_data, q_nominal_numerical, v_nominal_numerical, u_nominal_numerical)
 ddq_resulting_optimal = numerical_data.ddq
 
 print("\n--- Optimization Results (Single Time Instance) ---")
@@ -154,6 +155,10 @@ print(f"Optimal Configuration (q_opt):\n{q_optimal.T}")
 print(f"Optimal Velocity (v_opt):\n{v_optimal.T}")
 print(f"Optimal Torques (u_opt):\n{u_optimal.T}")
 print(f"Resulting Acceleration (ddq_actual):\n{ddq_resulting_optimal.T}")
+print("q_d", q_nominal_numerical)
+print("v_d", v_nominal_numerical)
+print("u_d", u_nominal_numerical)
+
 
 # Verify how close we got to the desired acceleration
 print(f"\nError in achieved ddq vs. desired ddq (norm): {np.linalg.norm(ddq_resulting_optimal - ddq_desired_numerical)}")

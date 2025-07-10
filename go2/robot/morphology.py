@@ -45,6 +45,7 @@ NUM_U = 12
 NUM_F = 12
 NUM_C = 4
 
+C_FRAME_IDS = [Frame.FL_EE, Frame.FR_EE, Frame.RL_EE, Frame.RR_EE]
 
 # [0] universe — type: FIXED_JOINT
 # [1] root_joint — type: JOINT

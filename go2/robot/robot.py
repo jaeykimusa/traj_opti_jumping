@@ -32,6 +32,7 @@ import numpy as np
 # ad_model = CasadiModel(model)  
 # ad_data = ad_model.createData()
 
+import casadi as ca
 import pinocchio.casadi
 
 # This path refers to pin source code but you can define your own directory here.

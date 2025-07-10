@@ -6,7 +6,7 @@ import numpy as np
 
 from go2.kinematics.kinematics import *
 from go2.dynamics.dynamics import *
-from go2.dynamics.fd import *
+from go2.dynamics.id import *
 from go2.utils.math_utils import *
 # from go2.utils.io_utils import *
 import casadi as ca
@@ -39,23 +39,6 @@ cs_tau = ca.SX.sym("u", NUM_Q, 1)
 cs_f = ca.SX.sym("f", NUM_F, 1)
 cs_J_c = ca.SX.sym("J_c", NUM_F, NUM_Q)
 
-cs_Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, ad_model.getFrameId("FL_EE"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-cs_Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, ad_model.getFrameId("FR_EE"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-cs_Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, ad_model.getFrameId("RL_EE"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-cs_Jc_RR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, ad_model.getFrameId("RR_EE"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-cs_Jc = ca.vertcat(cs_Jc_FL, cs_Jc_FR, cs_Jc_RL, cs_Jc_RR)
-cs_u = cs_tau + cs_Jc.T @ cs_f
-
-pinocchio.casadi.aba(ad_model, ad_data, cs_q, cs_v, cs_u)
-a_ad = ad_data.ddq
-cs_aba_fn = ca.Function("create_aba_fn", [cs_q, cs_v, cs_tau, cs_f], [a_ad])
-
-# # Eval ABA using classic Pinocchio model
-pin.aba(model, data, q, v, u)
-# print(data.ddq.T)
-# exit()
-
-
 opti = ca.Opti()
 
 q_opt = opti.variable(NUM_Q, 1) 
@@ -70,7 +53,7 @@ f_desired = opti.parameter(NUM_F, 1)
 
 ddq_desired = opti.parameter(NUM_Q, 1)
 
-ddq_sym = cs_aba_fn(q_opt, v_opt, tau_opt, f_opt)
+ddq_sym = id(q_opt, v_opt, tau_opt, f_opt)
 
 cost = ca.sumsqr(ddq_sym - ddq_desired) * 10.0 \
        + ca.sumsqr(q_opt - q_desired) * 42 \
@@ -182,8 +165,13 @@ axs[4].plot(f_nominal_numerical, label="f_desired")
 axs[4].set_title("f comparison")
 axs[4].legend()
 
-# Sixth subplot is empty — turn off its axis
-axs[5].axis('off')
+Jc_F_optimal= computeFullContactJacobians(q_optimal).T @ f_nominal_numerical
+Jc_F_nominal_numerical = computeFullContactJacobians(q_nominal_numerical).T @ f_nominal_numerical
+# 6 subplot: Jc comparison
+axs[5].plot(Jc_F_optimal, label="Jc_F_optimal")
+axs[5].plot(Jc_F_nominal_numerical, label="Jc_F_desired")
+axs[5].set_title("Jc*F comparison")
+axs[5].legend()
 
 # Optional: label axes, add spacing
 for i in range(5):
@@ -193,42 +181,9 @@ for i in range(5):
 plt.tight_layout()
 plt.show()
 
-# plt.plot(ddq_resulting_optimal, label=f"qdd_optimized")
-# plt.plot(ddq_desired_numerical, label=f"qdd_desired")
-# plt.title("qdd comparison")
-# plt.xlabel("")
-# plt.ylabel("")
-# plt.legend()
-# plt.show()
 
-# plt.plot(q_optimal, label=f"q_optimized")
-# plt.plot(q_nominal_numerical, label=f"q_desired")
-# plt.title("q comparison")
-# plt.xlabel("")
-# plt.ylabel("")
-# plt.legend()
-# plt.show()
 
-# plt.plot(v_optimal, label=f"v_optimal")
-# plt.plot(v_nominal_numerical, label=f"v_desired")
-# plt.title("v comparison")
-# plt.xlabel("")
-# plt.ylabel("")
-# plt.legend()
-# plt.show()
 
-# plt.plot(tau_optimal, label=f"tau_optimal")
-# plt.plot(tau_nominal_numerical, label=f"tau_desired")
-# plt.title("tau comparison")
-# plt.xlabel("")
-# plt.ylabel("")
-# plt.legend()
-# plt.show()
 
-# plt.plot(f_optimal, label=f"f_optimal")
-# plt.plot(f_nominal_numerical, label=f"f_desired")
-# plt.title("f comparison")
-# plt.xlabel("")
-# plt.ylabel("")
-# plt.legend()
-# plt.show()
+
+

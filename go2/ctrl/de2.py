@@ -23,26 +23,6 @@ from enum import Enum, auto
 from go2.robot.morphology import *
 import numpy as np
 
-# # This path refers to pin source code but you can define your own directory here.
-# pin_model_dir = Path(__file__).parent.parent / "robot/go2_description"
-# # You should change here to set up your own URDF file or just pass it as an argument of this example.
-# urdf_filename = (
-#     pin_model_dir / "model/go2/go2.urdf"
-#     if len(argv) < 2
-#     else argv[1]
-# )
-# joint_model = pin.JointModelComposite(2)
-# joint_model.addJoint(pin.JointModelTranslation())
-# joint_model.addJoint(pin.JointModelSphericalZYX())
-# # symbolic term
-# import pinocchio.casadi
-# model = pin.buildModelFromUrdf(urdf_filename, joint_model)
-# robot = pin.RobotWrapper(model)
-# data = model.createData()
-
-
-
-
 q0 = getDefaultStandState(model, data)
 v0 = np.zeros(18)
 a0 = np.zeros(18)
@@ -73,3 +53,10 @@ pin.aba(model, data, q, v, tau, f)
 
 print(data.ddq.T)
 exit()
+
+g_bl = g_grav[:6]
+g_j = g_grav[6:]
+
+# finding contacts
+feet_ids = [Frame.FL_EE, Frame.FR_EE, Frame.RL_EE, Frame.RR_EE]
+bl_id = model.getFrameId("")

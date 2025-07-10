@@ -6,29 +6,52 @@ import pinocchio as pin
 from go2.robot.morphology import *
 import numpy as np
 
+# # This path refers to pin source code but you can define your own directory here.
+# pin_model_dir = Path(__file__).parent.parent / "robot/go2_description"
+ 
+# # You should change here to set up your own URDF file or just pass it as an argument of this example.
+# urdf_filename = (
+#     pin_model_dir / "model/go2/go2.urdf"
+#     if len(argv) < 2
+#     else argv[1]
+# )
+
+# joint_model = pin.JointModelComposite(2)
+# joint_model.addJoint(pin.JointModelTranslation())
+# joint_model.addJoint(pin.JointModelSphericalZYX())
+
+# # Load the urdf model
+# model = pin.buildModelFromUrdf(urdf_filename, pin.JointModelFreeFlyer())
+# geom_model = pin.buildGeomFromUrdf(model, urdf_filename, pin.GeometryType.COLLISION)
+# robot = pin.RobotWrapper(model)
+# data = model.createData()
+# geom_data = geom_model.createData()
+
+# # symbolic term
+# from pinocchio.casadi import Model as CasadiModel
+# ad_model = CasadiModel(model)  
+# ad_data = ad_model.createData()
+
+import pinocchio.casadi
+
 # This path refers to pin source code but you can define your own directory here.
 pin_model_dir = Path(__file__).parent.parent / "robot/go2_description"
- 
 # You should change here to set up your own URDF file or just pass it as an argument of this example.
 urdf_filename = (
     pin_model_dir / "model/go2/go2.urdf"
     if len(argv) < 2
     else argv[1]
 )
- 
-# Load the urdf model
-model = pin.buildModelFromUrdf(urdf_filename, pin.JointModelFreeFlyer())
-geom_model = pin.buildGeomFromUrdf(model, urdf_filename, pin.GeometryType.COLLISION)
+joint_model = pin.JointModelComposite(2)
+joint_model.addJoint(pin.JointModelTranslation())
+joint_model.addJoint(pin.JointModelSphericalZYX())
+# symbolic term
+model = pin.buildModelFromUrdf(urdf_filename, joint_model)
 robot = pin.RobotWrapper(model)
 data = model.createData()
-geom_data = geom_model.createData()
 
-# symbolic term
-from pinocchio.casadi import Model as CasadiModel
-model_casadi = CasadiModel(model)  
-data_casadi = model_casadi.createData()
-
-
+ad_model = pinocchio.casadi.Model(model)
+ad_data = ad_model.createData()
 
 
 

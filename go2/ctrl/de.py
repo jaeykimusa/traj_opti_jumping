@@ -23,107 +23,89 @@ from enum import Enum, auto
 from go2.robot.morphology import *
 import numpy as np
 
-# This path refers to pin source code but you can define your own directory here.
-pin_model_dir = Path(__file__).parent.parent / "robot/go2_description"
- 
-# You should change here to set up your own URDF file or just pass it as an argument of this example.
-urdf_filename = (
-    pin_model_dir / "model/go2/go2.urdf"
-    if len(argv) < 2
-    else argv[1]
-)
- 
-# # Load the urdf model
 
-joint_model = pin.JointModelComposite(2)
-joint_model.addJoint(pin.JointModelTranslation())
-joint_model.addJoint(pin.JointModelSphericalZYX())
-
-# model = pin.buildModelFromUrdf(urdf_filename, joint_model)
-# robot = pin.RobotWrapper(model)
-
-
-# symbolic term
-import pinocchio.casadi
-model = pin.buildModelFromUrdf(urdf_filename, joint_model)
-robot = pin.RobotWrapper(model)
-data = model.createData()
-
-q = np.linspace(0, 1, 18)
-v = np.linspace(0, 1, 18)
-tau = np.linspace(0, 1, 18)
+q = getDefaultStandState(model, data)
+v = np.zeros(18)
+qdd = np.zeros(18)
+tau = pin.rnea(model, data, q, v, qdd)
+f = computeFullContactForces(model, data, q, v, qdd)
+u = tau + computeContactJacobian(model, data, q).T @ f
 
 cs_q = ca.SX.sym("q", NUM_Q, 1)
 cs_v = ca.SX.sym("qd", NUM_Q, 1)
-qdd = ca.SX.sym("qdd", NUM_Q, 1)
+cs_qdd = ca.SX.sym("qdd", NUM_Q, 1)
+cs_u = ca.SX.sym("u", NUM_Q, 1)
 cs_tau = ca.SX.sym("u", NUM_Q, 1)
+cs_f = ca.SX.sym("f", NUM_F, 1)
+cs_J_c = ca.SX.sym("J_c", NUM_F, NUM_Q)
 
-ad_model = pinocchio.casadi.Model(model)
-ad_data = ad_model.createData()
 
-pinocchio.casadi.aba(ad_model, ad_data, cs_q, cs_v, cs_tau)
+cs_Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+cs_Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.FR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+cs_Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.RL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+cs_Jc_RR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.RR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+cs_Jc = ca.vertcat(cs_Jc_FL, cs_Jc_FR, cs_Jc_RL, cs_Jc_RR)
+cs_u = cs_tau + cs_Jc.T @ cs_f
+
+pinocchio.casadi.aba(ad_model, ad_data, cs_q, cs_v, cs_u)
 a_ad = ad_data.ddq
-
-eval_aba = ca.Function("eval_aba", [cs_q, cs_v, cs_tau], [a_ad])
-
-# # Evaluate CasADi expression with real value
-# a_casadi_res = eval_aba(q, v, tau)
+cs_aba_fn = ca.Function("create_aba_fn", [cs_q, cs_v, cs_tau, cs_f], [a_ad])
 
 # # Eval ABA using classic Pinocchio model
-pin.aba(model, data, q, v, tau)
+pin.aba(model, data, q, v, u)
+# print(data.ddq.T)
+# exit()
 
-# Print both results
-# print("pinocchio double:\n\ta =", data.ddq.T)
-# print("pinocchio CasADi:\n\ta =", np.array(a_casadi_res).T)
-
-# Verify results are close
-# np.testing.assert_allclose(data.ddq, a_casadi_res, atol=1e-9)
-# print("\nResults from Pinocchio (double) and Pinocchio (CasADi) match.")
-
-# qdd123 = pin.aba(model_casadi, data_casadi, q, qd, u)
 
 opti = ca.Opti()
 
 q_opt = opti.variable(NUM_Q, 1) 
 v_opt = opti.variable(NUM_Q, 1) 
-u_opt = opti.variable(NUM_Q, 1) 
+tau_opt = opti.variable(NUM_Q, 1) 
+f_opt = opti.variable(NUM_F, 1)
 
 q_desired = opti.parameter(NUM_Q, 1)
 v_desired = opti.parameter(NUM_Q, 1)
-u_desired = opti.parameter(NUM_Q, 1)
+tau_desired = opti.parameter(NUM_Q, 1)
+f_desired = opti.parameter(NUM_F, 1)
 
 ddq_desired = opti.parameter(NUM_Q, 1)
 
-ddq_sym = eval_aba(q_opt, v_opt, u_opt)
+ddq_sym = cs_aba_fn(q_opt, v_opt, tau_opt, f_opt)
 
 cost = ca.sumsqr(ddq_sym - ddq_desired) * 10.0 \
        + ca.sumsqr(q_opt - q_desired) * 42 \
        + ca.sumsqr(v_opt - v_desired) * 42 \
-       + ca.sumsqr(u_opt - u_desired) * 42
+       + ca.sumsqr(tau_opt - tau_desired) * 42 \
+       + ca.sumsqr(f_opt - f_desired) * 42
 
 opti.minimize(cost)
 
 opti.subject_to(v_opt >= -np.ones((NUM_Q,1)) * 50) # Example: +/- 50 rad/s or m/s
 opti.subject_to(v_opt <= np.ones((NUM_Q,1)) * 50)
-opti.subject_to(u_opt >= -np.ones((NUM_Q,1)) * 10000) # Example: +/- 100 Nm
-opti.subject_to(u_opt <= np.ones((NUM_Q,1)) * 10000)
+opti.subject_to(tau_opt >= -np.ones((NUM_Q,1)) * 10000) # Example: +/- 100 Nm
+opti.subject_to(tau_opt <= np.ones((NUM_Q,1)) * 10000)
+opti.subject_to(f_opt >= -np.ones((NUM_F,1)) * 10000) # Example: +/- 100 Nm
+opti.subject_to(f_opt <= np.ones((NUM_F,1)) * 10000)
 
 ddq_desired_numerical = data.ddq
-# print(data.ddq)
-# print(":)")
-# exit()
 q_nominal_numerical = q
 v_nominal_numerical = v
-u_nominal_numerical = tau
+tau_nominal_numerical = tau
+f_nominal_numerical = f
+u_nominal_numerical = u
 
 opti.set_value(ddq_desired, ddq_desired_numerical)
 opti.set_value(q_desired, q_nominal_numerical)
 opti.set_value(v_desired, v_nominal_numerical)
-opti.set_value(u_desired, u_nominal_numerical)
+opti.set_value(tau_desired, tau_nominal_numerical)
+opti.set_value(f_desired, f_nominal_numerical)
 
 opti.set_initial(q_opt, np.zeros((NUM_Q, 1)))
 opti.set_initial(v_opt, np.zeros((NUM_Q, 1)))
-opti.set_initial(u_opt, np.zeros((NUM_Q, 1)))
+opti.set_initial(tau_opt, np.zeros((NUM_Q, 1)))
+opti.set_initial(f_opt, np.zeros((NUM_F, 1)))
+
 
 opti.solver("ipopt", {"expand":True}, {"max_iter":1000})
 # sol = opti.solve()
@@ -136,29 +118,118 @@ except RuntimeError as e:
     print(q)
     print("v_opt debug:", opti.debug.value(v_opt))
     print(v)
-    print("u_opt debug:", opti.debug.value(u_opt))
+    print("tau_opt debug:", opti.debug.value(tau_opt))
+    print(tau)
+    print("f_opt debug:", opti.debug.value(f_opt))
+    print(f)
     exit()
 
 q_optimal = sol.value(q_opt)
 v_optimal = sol.value(v_opt)
-u_optimal = sol.value(u_opt)
+tau_optimal = sol.value(tau_opt)
+f_optimal = sol.value(f_opt)
 cost_optimal = sol.value(cost)
 
-numerical_data = model.createData()
-pin.aba(model, numerical_data, q_nominal_numerical, v_nominal_numerical, u_nominal_numerical)
-ddq_resulting_optimal = numerical_data.ddq
+# numerical_data = model.createData()
+pin.aba(model, data, q_nominal_numerical, v_nominal_numerical, u_nominal_numerical)
+ddq_resulting_optimal = data.ddq
 
 print("\n--- Optimization Results (Single Time Instance) ---")
 print(f"Optimal Cost: {cost_optimal}")
 print(f"Desired Acceleration (ddq_des):\n{ddq_desired_numerical.T}")
 print(f"Optimal Configuration (q_opt):\n{q_optimal.T}")
 print(f"Optimal Velocity (v_opt):\n{v_optimal.T}")
-print(f"Optimal Torques (u_opt):\n{u_optimal.T}")
+print(f"Optimal Torques (u_opt):\n{tau_optimal.T}")
+print(f"Optimal Torques (u_opt):\n{f_optimal.T}")
 print(f"Resulting Acceleration (ddq_actual):\n{ddq_resulting_optimal.T}")
-print("q_d", q_nominal_numerical)
-print("v_d", v_nominal_numerical)
-print("u_d", u_nominal_numerical)
 
 
 # Verify how close we got to the desired acceleration
 print(f"\nError in achieved ddq vs. desired ddq (norm): {np.linalg.norm(ddq_resulting_optimal - ddq_desired_numerical)}")
+
+
+fig, axs = plt.subplots(2, 3, figsize=(15, 8))  # Wider layout
+
+# Flatten the 2D array of axes for easy indexing
+axs = axs.flatten()
+
+# First subplot: qdd comparison
+axs[0].plot(ddq_resulting_optimal, label="qdd_optimized")
+axs[0].plot(ddq_desired_numerical, label="qdd_desired")
+axs[0].set_title("qdd comparison")
+axs[0].legend()
+
+# Second subplot: q comparison
+axs[1].plot(q_optimal, label="q_optimized")
+axs[1].plot(q_nominal_numerical, label="q_desired")
+axs[1].set_title("q comparison")
+axs[1].legend()
+
+# Third subplot: v comparison
+axs[2].plot(v_optimal, label="v_optimal")
+axs[2].plot(v_nominal_numerical, label="v_desired")
+axs[2].set_title("v comparison")
+axs[2].legend()
+
+# Fourth subplot: tau comparison
+axs[3].plot(tau_optimal, label="tau_optimal")
+axs[3].plot(tau_nominal_numerical, label="tau_desired")
+axs[3].set_title("tau comparison")
+axs[3].legend()
+
+# Fifth subplot: f comparison
+axs[4].plot(f_optimal, label="f_optimal")
+axs[4].plot(f_nominal_numerical, label="f_desired")
+axs[4].set_title("f comparison")
+axs[4].legend()
+
+# Sixth subplot is empty — turn off its axis
+axs[5].axis('off')
+
+# Optional: label axes, add spacing
+for i in range(5):
+    axs[i].set_xlabel("Time step")
+    axs[i].set_ylabel("Value")
+
+plt.tight_layout()
+plt.show()
+
+# plt.plot(ddq_resulting_optimal, label=f"qdd_optimized")
+# plt.plot(ddq_desired_numerical, label=f"qdd_desired")
+# plt.title("qdd comparison")
+# plt.xlabel("")
+# plt.ylabel("")
+# plt.legend()
+# plt.show()
+
+# plt.plot(q_optimal, label=f"q_optimized")
+# plt.plot(q_nominal_numerical, label=f"q_desired")
+# plt.title("q comparison")
+# plt.xlabel("")
+# plt.ylabel("")
+# plt.legend()
+# plt.show()
+
+# plt.plot(v_optimal, label=f"v_optimal")
+# plt.plot(v_nominal_numerical, label=f"v_desired")
+# plt.title("v comparison")
+# plt.xlabel("")
+# plt.ylabel("")
+# plt.legend()
+# plt.show()
+
+# plt.plot(tau_optimal, label=f"tau_optimal")
+# plt.plot(tau_nominal_numerical, label=f"tau_desired")
+# plt.title("tau comparison")
+# plt.xlabel("")
+# plt.ylabel("")
+# plt.legend()
+# plt.show()
+
+# plt.plot(f_optimal, label=f"f_optimal")
+# plt.plot(f_nominal_numerical, label=f"f_desired")
+# plt.title("f comparison")
+# plt.xlabel("")
+# plt.ylabel("")
+# plt.legend()
+# plt.show()

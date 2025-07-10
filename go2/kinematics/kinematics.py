@@ -16,7 +16,7 @@ def getDefaultStandState(model, data):
     #               0.0, 0.95, -1.75], dtype=np.double)
     # print(f"q: {q.T}")
     base_xyz = np.array([0.0, 0.0, 0.3]) # init guess for z = 0.3 m
-    base_quat = np.array([1.0, 0.0, 0.0, 0.0])
+    base_quat = np.array([0.0, 0.0, 0.0])
     joints = np.array([0.0, 0.95, -1.75] * 4)
     q = np.concatenate([base_xyz, base_quat, joints])
 

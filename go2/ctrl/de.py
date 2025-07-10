@@ -39,11 +39,10 @@ cs_tau = ca.SX.sym("u", NUM_Q, 1)
 cs_f = ca.SX.sym("f", NUM_F, 1)
 cs_J_c = ca.SX.sym("J_c", NUM_F, NUM_Q)
 
-
-cs_Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-cs_Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.FR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-cs_Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.RL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-cs_Jc_RR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.RR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+cs_Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, ad_model.getFrameId("FL_EE"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+cs_Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, ad_model.getFrameId("FR_EE"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+cs_Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, ad_model.getFrameId("RL_EE"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+cs_Jc_RR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, ad_model.getFrameId("RR_EE"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
 cs_Jc = ca.vertcat(cs_Jc_FL, cs_Jc_FR, cs_Jc_RL, cs_Jc_RR)
 cs_u = cs_tau + cs_Jc.T @ cs_f
 

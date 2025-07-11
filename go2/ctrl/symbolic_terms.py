@@ -24,7 +24,48 @@ from enum import Enum, auto
 from go2.robot.morphology import *
 import numpy as np
 
-q = getDefaultStandState(model, data)
+base_xyz = np.array([0.0, 0.0, 0.3]) # init guess for z = 0.3 m
+base_quat = np.array([0.0, 0.0, 0.0])
+joints = np.array([0.0, 0.95, -1.75] * 4)
+q = np.concatenate([base_xyz, base_quat, joints])
+import rerun as rr
+from go2.mpac_logging.mpac_logging import robot_zoo
+from go2.mpac_logging.mpac_logging.rerun.robot_logger import RobotLogger
+from go2.mpac_logging.mpac_logging.rerun.utils import rerun_initialize, rerun_store
+
+rr.init("simple_robot_example", spawn=False)
+robot_logger = RobotLogger.from_zoo("go2_description")
+rerun_initialize("fk_test", spawn=True)
+print("works")
+
+import time
+current_time = time.time()
+
+base_position = q[:3]
+base_orientation = R.from_euler("xyz", q[3:6], degrees=False).as_quat()
+joint_positions = {
+    "FL_hip_joint" : q[6], 
+    "FL_thigh_joint" : q[7],
+    "FL_calf_joint" : q[8],
+    "FR_hip_joint" : q[9],
+    "FR_thigh_joint" : q[10],
+    "FR_calf_joint" : q[11],
+    "RL_hip_joint" : q[12],
+    "RL_thigh_joint" : q[13],
+    "RL_calf_joint" : q[14],
+    "RR_hip_joint" : q[15],
+    "RR_thigh_joint" : q[16],
+    "RR_calf_joint" : q[17],
+}
+robot_logger.log_state(
+    logtime=current_time,
+    base_position=base_position,
+    base_orientation=base_orientation,
+    joint_positions=joint_positions
+)
+rr.save("q_test.rrd")
+exit()
+
 v = np.zeros(18)
 qdd = np.zeros(18)
 tau = pin.rnea(model, data, q, v, qdd)
@@ -127,6 +168,48 @@ print(f"Resulting Acceleration (ddq_actual):\n{ddq_resulting_optimal.T}")
 
 # Verify how close we got to the desired acceleration
 print(f"\nError in achieved ddq vs. desired ddq (norm): {np.linalg.norm(ddq_resulting_optimal - ddq_desired_numerical)}")
+
+printFk(q)
+printFk(q_optimal)
+exit()
+# vis via rerun
+import rerun as rr
+from go2.mpac_logging.mpac_logging import robot_zoo
+from go2.mpac_logging.mpac_logging.rerun.robot_logger import RobotLogger
+from go2.mpac_logging.mpac_logging.rerun.utils import rerun_initialize, rerun_store
+
+rr.init("simple_robot_example", spawn=False)
+robot_logger = RobotLogger.from_zoo("go2_description")
+rerun_initialize("fk_test", spawn=True)
+print("works")
+
+import time
+current_time = time.time()
+
+base_position = q_optimal[:3]
+base_orientation = R.from_euler("xyz", q_optimal[3:6], degrees=False).as_quat()
+joint_positions = {
+    "FL_hip_joint" : 0, #q_optimal[6], 
+    "FL_thigh_joint" : q_optimal[7],
+    "FL_calf_joint" : q_optimal[8],
+    "FR_hip_joint" : 0, #q_optimal[9],
+    "FR_thigh_joint" : q_optimal[10],
+    "FR_calf_joint" : q_optimal[11],
+    "RL_hip_joint" : 0, #q_optimal[12],
+    "RL_thigh_joint" : q_optimal[13],
+    "RL_calf_joint" : q_optimal[14],
+    "RR_hip_joint" : 0, #q_optimal[15],
+    "RR_thigh_joint" : q_optimal[16],
+    "RR_calf_joint" : q_optimal[17],
+}
+robot_logger.log_state(
+    logtime=current_time,
+    base_position=base_position,
+    base_orientation=base_orientation,
+    joint_positions=joint_positions
+)
+rr.save("fk_test.rrd")
+exit()
 
 
 fig, axs = plt.subplots(3, 3, figsize=(15, 8))  # Wider layout

@@ -9,7 +9,7 @@ def fk(q):
         cs_x = ca.SX.sym("x", 15, 1)
         cs_q = ca.SX.sym("q", NUM_Q, 1)
         pinocchio.casadi.forwardKinematics(ad_model, ad_data, cs_q)
-        bodyPos = data.oMf[BODY_FRAME].translation        
+        bodyPos = data.oMf[BASE_FRAME].translation        
         eePos = []
         for frameId in EE_FRAME_IDS:
             ee_pos = data.oMf[frameId].translation
@@ -35,8 +35,8 @@ def printFk(q):
     x = fk(q)
     basePos = x[:3].copy()
     basePos[np.abs(basePos) < 1e-6] = 0.0
-    print("{}: {: .3f} {: .3f} {: .3f}".format(BODY_NAME, *basePos))
-    for i, frameName in enumerate(EE_FRAME_NAMES):
+    print("{}: {: .3f} {: .3f} {: .3f}".format(BASE_NAME, *basePos))
+    for i, frameName in enumerate(FOOT_NAMES):
         start = 3 + 3*i
         end = start + 3
         eePos = x[start:end].copy()

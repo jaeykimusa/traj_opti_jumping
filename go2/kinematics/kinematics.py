@@ -4,6 +4,9 @@ from sys import argv
 import pinocchio 
 from scipy.optimize import least_squares
 
+from go2.robot.robot import *
+from go2.robot.morphology import *
+
 
 def getDefaultStandState(model, data):
     # Sample a random configuration
@@ -20,15 +23,16 @@ def getDefaultStandState(model, data):
     joints = np.array([0.0, 0.95, -1.75] * 4)
     q = np.concatenate([base_xyz, base_quat, joints])
 
-    feet_names = ["FL_EE", "FR_EE", "RL_EE", "RR_EE"]
+    feet_names = FOOT_NAMES
+    # ["LF_FOOT", "LH_FOOT", "RF_FOOT", "RH_FOOT"]
     feet_ids = [model.getFrameId(name) for name in feet_names]
 
     # Desired foot positions in world frame (z=0)
     target_positions = {
-        "FL_EE": np.array([0.1934, 0.142, 0]),
-        "FR_EE": np.array([0.1934, -0.142, 0]),
-        "RL_EE": np.array([-0.1934, 0.142, 0]),
-        "RR_EE": np.array([-0.1934, -0.142, 0]),
+        "LF_FOOT": np.array([0.1934, 0.142, 0]),
+        "LH_FOOT": np.array([0.1934, -0.142, 0]),
+        "RF_FOOT": np.array([-0.1934, 0.142, 0]),
+        "RH_FOOT": np.array([-0.1934, -0.142, 0]),
     }
 
     # ====================

@@ -39,7 +39,7 @@ import pinocchio.casadi
 pin_model_dir = Path(__file__).parent.parent / "robot/go2_description"
 # You should change here to set up your own URDF file or just pass it as an argument of this example.
 urdf_filename = (
-    pin_model_dir / "model/go2/go2.urdf"
+    pin_model_dir / "go2.urdf"
     if len(argv) < 2
     else argv[1]
 )
@@ -54,6 +54,9 @@ data = model.createData()
 ad_model = pinocchio.casadi.Model(model)
 ad_data = ad_model.createData()
 
+# for i, frame in enumerate(model.frames):
+#     frameType = frame.type.name if hasattr(frame.type, 'name') else str(frame.type)
+#     print(f"{frame.name}, {i}, {frameType}")
 
 
 # pin.forwardKinematics(model, data, q)

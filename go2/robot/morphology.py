@@ -38,17 +38,22 @@ class Frame(IntEnum):
     RR_calf_joint = 31
     RR_calf = 32
     RR_EE_joint = 33
-    RR_EE =34
+    RR_EE = 34
 
 NUM_Q = 18
 NUM_U = 12
 NUM_F = 12
 NUM_C = 4
 
-EE_FRAME_IDS = [Frame.FL_EE, Frame.FR_EE, Frame.RL_EE, Frame.RR_EE] # or C_FRAME_IDS
-EE_FRAME_NAMES = [Frame.FL_EE.name, Frame.FR_EE.name, Frame.RL_EE.name, Frame.RR_EE.name]
-BODY_NAME = "BODY"
-BODY_FRAME = Frame.BASE_LINK
+# EE_FRAME_IDS = [Frame.FL_EE, Frame.FR_EE, Frame.RL_EE, Frame.RR_EE] # or C_FRAME_IDS
+# EE_FRAME_NAMES = [Frame.FL_EE.name, Frame.FR_EE.name, Frame.RL_EE.name, Frame.RR_EE.name]
+# BODY_NAME = "BODY"
+# BODY_FRAME = Frame.BASE_LINK
+
+EE_FRAME_IDS = [26, 34, 58, 66]
+FOOT_NAMES = ["LF_FOOT", "LH_FOOT", "RF_FOOT", "RH_FOOT"]
+BASE_FRAME = 2
+BASE_NAME = "BASE"
 
 # [0] universe — type: FIXED_JOINT
 # [1] root_joint — type: JOINT

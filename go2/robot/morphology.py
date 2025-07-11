@@ -45,7 +45,10 @@ NUM_U = 12
 NUM_F = 12
 NUM_C = 4
 
-C_FRAME_IDS = [Frame.FL_EE, Frame.FR_EE, Frame.RL_EE, Frame.RR_EE]
+EE_FRAME_IDS = [Frame.FL_EE, Frame.FR_EE, Frame.RL_EE, Frame.RR_EE] # or C_FRAME_IDS
+EE_FRAME_NAMES = [Frame.FL_EE.name, Frame.FR_EE.name, Frame.RL_EE.name, Frame.RR_EE.name]
+BODY_NAME = "BODY"
+BODY_FRAME = Frame.BASE_LINK
 
 # [0] universe — type: FIXED_JOINT
 # [1] root_joint — type: JOINT

@@ -32,7 +32,7 @@ qdd = np.zeros(model.nv)
 
 # READFILE: calculated reference q for 2.5 m forward jump
 print(os.path.abspath(os.getcwd()))
-jump_path = os.path.join(os.path.dirname(__file__), "q_ref_2m_forward_jump.txt")
+jump_path = os.path.join(os.path.dirname(__file__), "q_ref_forward_jump.txt")
 q_ref = np.loadtxt(jump_path, delimiter=',')
 
 q_ref = interpolateMatrixToTargetColumns(q_ref, 1000)
@@ -106,6 +106,6 @@ for i in range(getColumnSize(q_ref)):
     )
     current_time += dt
 
-rr.save("go2_forward_jump_test.rrd")
+rr.save("forward_jump_test_today.rrd")
 
 exit()

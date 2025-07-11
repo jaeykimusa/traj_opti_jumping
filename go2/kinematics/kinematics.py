@@ -1,60 +1,71 @@
 import numpy as np
 from pathlib import Path
 from sys import argv
-import pinocchio 
 from scipy.optimize import least_squares
 
 from go2.robot.robot import *
 from go2.robot.morphology import *
 
 
-def getDefaultStandState(model, data):
-    # Sample a random configuration
-    # q = pinocchio.randomConfiguration(model)
-    # q = np.array([0.0, 0.0, 0.4, 0.4, 
-    #               0.0, 0.0, 0.0, 
-    #               0.0, 0.95, -1.75, 
-    #               0.0, 0.95, -1.75, 
-    #               0.0, 0.95, -1.75, 
-    #               0.0, 0.95, -1.75], dtype=np.double)
-    # print(f"q: {q.T}")
-    base_xyz = np.array([0.0, 0.0, 0.3]) # init guess for z = 0.3 m
-    base_quat = np.array([0.0, 0.0, 0.0])
-    joints = np.array([0.0, 0.95, -1.75] * 4)
-    q = np.concatenate([base_xyz, base_quat, joints])
-
+def getDefaultStandState(model, data, foot_target_positions=None):
+    # Default foot positions if not provided
+    if foot_target_positions is None:
+        foot_target_positions = {
+            "LF_FOOT": np.array([0.1934, 0.142, 0]),
+            "RF_FOOT": np.array([0.1934, -0.142, 0]),
+            "LH_FOOT": np.array([-0.1934, 0.142, 0]),
+            "RH_FOOT": np.array([-0.1934, -0.142, 0]),
+        }
+    
     feet_names = FOOT_NAMES
-    # ["LF_FOOT", "LH_FOOT", "RF_FOOT", "RH_FOOT"]
-    feet_ids = [model.getFrameId(name) for name in feet_names]
-
-    # Desired foot positions in world frame (z=0)
-    target_positions = {
-        "LF_FOOT": np.array([0.1934, 0.142, 0]),
-        "LH_FOOT": np.array([0.1934, -0.142, 0]),
-        "RF_FOOT": np.array([-0.1934, 0.142, 0]),
-        "RH_FOOT": np.array([-0.1934, -0.142, 0]),
-    }
-
-    # ====================
-    # 3. Inverse Kinematics Setup
-    # ====================
+    feet_ids = EE_FRAME_IDS
+    
+    # Initial guess - base at 0.3m height with zero orientation
+    base_xyz = np.array([0.0, 0.0, 0.3])  # Initial guess for base position
+    base_rpy = np.array([0.0, 0.0, 0.0])  # Initial orientation (roll, pitch, yaw)
+    
+    # Initial joint angles - typical standing configuration
+    joints = np.array([0.0, 0.8, -1.6] * 4)  # Slightly bent legs
+    
+    q_init = np.concatenate([base_xyz, base_rpy, joints])
+    
+    # Bounds for optimization
+    lb = q_init.copy()
+    ub = q_init.copy()
+    
+    # Base position bounds
+    lb[:3] = np.array([-0.1, -0.1, 0.2])   # x,y,z min
+    ub[:3] = np.array([0.1, 0.1, 0.5])     # x,y,z max
+    
+    # Base orientation bounds (roll, pitch, yaw in radians)
+    lb[3:6] = np.array([-0.2, -0.2, -0.2])  # Small allowed orientation variation
+    ub[3:6] = np.array([0.2, 0.2, 0.2])
+    
+    # Joint angle bounds (adjust according to your robot's limits)
+    joint_lb = np.array([-0.5, 0.5, -2.0] * 4)  # Min angles for each leg
+    joint_ub = np.array([0.5, 1.5, -1.0] * 4)   # Max angles for each leg
+    lb[6:] = joint_lb  # Note: changed from 7 to 6 because we have 6 base DOFs now
+    ub[6:] = joint_ub
+    
     def pose_error(q):
         pinocchio.framesForwardKinematics(model, data, q)
         error = []
         for name, fid in zip(feet_names, feet_ids):
-            err = data.oMf[fid].translation - target_positions[name]
+            err = data.oMf[fid].translation - foot_target_positions[name]
             error.append(err)
         return np.concatenate(error)
-
+    
+    # Run optimization
     result = least_squares(
         fun=pose_error,
-        x0=q,
-        method="trf",
-        max_nfev=100,
+        x0=q_init,
+        bounds=(lb, ub),
+        method='trf',
+        max_nfev=200,
         verbose=0,
     )
-    q_solved = result.x
-    return q_solved
+    
+    return result.x
 
 def printEEPositions(model, data):
     ee_names = ["FL_EE", "FR_EE", "RL_EE", "RR_EE"]

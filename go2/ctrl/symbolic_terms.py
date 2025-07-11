@@ -24,48 +24,47 @@ from enum import Enum, auto
 from go2.robot.morphology import *
 import numpy as np
 
-base_xyz = np.array([0.0, 0.0, 0.3]) # init guess for z = 0.3 m
-base_quat = np.array([0.0, 0.0, 0.0])
-joints = np.array([0.0, 0.95, -1.75] * 4)
-q = np.concatenate([base_xyz, base_quat, joints])
-import rerun as rr
-from go2.mpac_logging.mpac_logging import robot_zoo
-from go2.mpac_logging.mpac_logging.rerun.robot_logger import RobotLogger
-from go2.mpac_logging.mpac_logging.rerun.utils import rerun_initialize, rerun_store
+q = getDefaultStandState(model, data)
+# print(q)
+# printFk(q)
+# exit()
+# import rerun as rr
+# from go2.mpac_logging.mpac_logging import robot_zoo
+# from go2.mpac_logging.mpac_logging.rerun.robot_logger import RobotLogger
+# from go2.mpac_logging.mpac_logging.rerun.utils import rerun_initialize, rerun_store
 
-rr.init("simple_robot_example", spawn=False)
-robot_logger = RobotLogger.from_zoo("go2_description")
-rerun_initialize("fk_test", spawn=True)
-print("works")
+# rr.init("simple_robot_example", spawn=False)
+# robot_logger = RobotLogger.from_zoo("go2_description")
+# rerun_initialize("fk_test", spawn=True)
+# print("works")
 
-import time
-current_time = time.time()
+# import time
+# current_time = time.time()
 
-base_position = q[:3]
-base_orientation = R.from_euler("xyz", q[3:6], degrees=False).as_quat()
-joint_positions = {
-    "FL_hip_joint" : q[6], 
-    "FL_thigh_joint" : q[7],
-    "FL_calf_joint" : q[8],
-    "FR_hip_joint" : q[9],
-    "FR_thigh_joint" : q[10],
-    "FR_calf_joint" : q[11],
-    "RL_hip_joint" : q[12],
-    "RL_thigh_joint" : q[13],
-    "RL_calf_joint" : q[14],
-    "RR_hip_joint" : q[15],
-    "RR_thigh_joint" : q[16],
-    "RR_calf_joint" : q[17],
-}
-robot_logger.log_state(
-    logtime=current_time,
-    base_position=base_position,
-    base_orientation=base_orientation,
-    joint_positions=joint_positions
-)
-rr.save("q_test.rrd")
-exit()
-
+# base_position = q[:3]
+# base_orientation = R.from_euler("xyz", q[3:6], degrees=False).as_quat()
+# joint_positions = {
+#     "FL_hip_joint" : q[6], 
+#     "FL_thigh_joint" : q[7],
+#     "FL_calf_joint" : q[8],
+#     "FR_hip_joint" : q[9],
+#     "FR_thigh_joint" : q[10],
+#     "FR_calf_joint" : q[11],
+#     "RL_hip_joint" : q[12],
+#     "RL_thigh_joint" : q[13],
+#     "RL_calf_joint" : q[14],
+#     "RR_hip_joint" : q[15],
+#     "RR_thigh_joint" : q[16],
+#     "RR_calf_joint" : q[17],
+# }
+# robot_logger.log_state(
+#     logtime=current_time,
+#     base_position=base_position,
+#     base_orientation=base_orientation,
+#     joint_positions=joint_positions
+# )
+# rr.save("fk_test.rrd")
+# exit()
 v = np.zeros(18)
 qdd = np.zeros(18)
 tau = pin.rnea(model, data, q, v, qdd)
@@ -84,53 +83,71 @@ opti = ca.Opti()
 
 q_opt = opti.variable(NUM_Q, 1) 
 v_opt = opti.variable(NUM_Q, 1) 
+qdd_opt = opti.variable(NUM_Q, 1)
 tau_opt = opti.variable(NUM_Q, 1) 
 f_opt = opti.variable(NUM_F, 1)
 
 q_desired = opti.parameter(NUM_Q, 1)
 v_desired = opti.parameter(NUM_Q, 1)
+qdd_desired = opti.parameter(NUM_Q, 1)
 tau_desired = opti.parameter(NUM_Q, 1)
 f_desired = opti.parameter(NUM_F, 1)
 
-ddq_desired = opti.parameter(NUM_Q, 1)
+qdd_desired = opti.parameter(NUM_Q, 1)
 
-ddq_sym = id(q_opt, v_opt, tau_opt, f_opt)
+x_desired = [0, 0, 0.296904558,
+             0.1934, 0.142, 0,
+             -0.1934, 0.142, 0,
+             0.1934, -0.142, 0,
+             -0.1934, -0.142, 0]
 
-cost = ca.sumsqr(ddq_sym - ddq_desired) * 10.0 \
-       + ca.sumsqr(q_opt - q_desired) * 42 \
-       + ca.sumsqr(v_opt - v_desired) * 42 \
-       + ca.sumsqr(tau_opt - tau_desired) * 42 \
-       + ca.sumsqr(f_opt - f_desired) * 42
+# ddq_sym = id(q_opt, v_opt, tau_opt, f_opt)
 
-opti.minimize(cost)
-opti.subject_to(fk(q_opt)[2] >= 0 )
-opti.subject_to(v_opt >= -np.ones((NUM_Q,1)) * 50) # Example: +/- 50 rad/s or m/s
-opti.subject_to(v_opt <= np.ones((NUM_Q,1)) * 50)
-opti.subject_to(tau_opt >= -np.ones((NUM_Q,1)) * 10000) # Example: +/- 100 Nm
-opti.subject_to(tau_opt <= np.ones((NUM_Q,1)) * 10000)
-opti.subject_to(f_opt >= -np.ones((NUM_F,1)) * 10000) # Example: +/- 100 Nm
-opti.subject_to(f_opt <= np.ones((NUM_F,1)) * 10000)
+# cost = ca.sumsqr(ddq_sym - qdd_desired) * 10.0 \
+#        + ca.sumsqr(q_opt - q_desired) * 1000000 \
+#        + ca.sumsqr(v_opt - v_desired) * 1000 \
+#        + ca.sumsqr(tau_opt - tau_desired) * 100 \
+#        + ca.sumsqr(f_opt - f_desired) * 100
 
-ddq_desired_numerical = data.ddq
+# opti.minimize(cost)
+opti.subject_to(qdd_opt == id(q_opt, v_opt, tau_opt, f_opt))
+# opti.subject_to(x_desired[3:15] == fk(q_opt)[3:15])
+opti.subject_to(v_opt == np.zeros(NUM_Q))
+opti.subject_to(qdd_opt == np.zeros(NUM_Q))
+
+
+opti.subject_to(qdd_opt >= -np.ones((NUM_Q,1)) * 10)
+opti.subject_to(qdd_opt <= np.ones((NUM_Q,1)) * 10)
+opti.subject_to(q_opt >= -np.ones((NUM_Q,1)) * 10)
+opti.subject_to(q_opt <= np.ones((NUM_Q,1)) * 10)
+# opti.subject_to(v_opt >= -np.ones((NUM_Q,1)) * 50) 
+# opti.subject_to(v_opt <= np.ones((NUM_Q,1)) * 50)
+opti.subject_to(tau_opt >= -np.ones((NUM_Q,1)) * 45)
+opti.subject_to(tau_opt <= np.ones((NUM_Q,1)) * 45)
+opti.subject_to(f_opt > np.zeros((NUM_F,1)))
+opti.subject_to(f_opt <= np.ones((NUM_F,1)) * 350)
+
+qdd_desired_numerical = data.ddq
 q_nominal_numerical = q
 v_nominal_numerical = v
 tau_nominal_numerical = tau
 f_nominal_numerical = f
 u_nominal_numerical = u
 
-opti.set_value(ddq_desired, ddq_desired_numerical)
+opti.set_value(qdd_desired, qdd_desired_numerical)
 opti.set_value(q_desired, q_nominal_numerical)
 opti.set_value(v_desired, v_nominal_numerical)
 opti.set_value(tau_desired, tau_nominal_numerical)
 opti.set_value(f_desired, f_nominal_numerical)
 
-opti.set_initial(q_opt, np.zeros((NUM_Q, 1)))
+opti.set_initial(q_opt, q)
+opti.set_initial(qdd_opt, np.zeros((NUM_Q, 1)))
 opti.set_initial(v_opt, np.zeros((NUM_Q, 1)))
-opti.set_initial(tau_opt, np.zeros((NUM_Q, 1)))
-opti.set_initial(f_opt, np.zeros((NUM_F, 1)))
+opti.set_initial(tau_opt, tau)
+opti.set_initial(f_opt, f)
 
 
-opti.solver("ipopt", {"expand":True}, {"max_iter":1000})
+opti.solver("ipopt", {"expand":True}, {"max_iter":100000})
 
 try:
     sol = opti.solve()
@@ -150,15 +167,15 @@ q_optimal = sol.value(q_opt)
 v_optimal = sol.value(v_opt)
 tau_optimal = sol.value(tau_opt)
 f_optimal = sol.value(f_opt)
-cost_optimal = sol.value(cost)
+# cost_optimal = sol.value(cost)
 
 # numerical_data = model.createData()
 pin.aba(model, data, q_nominal_numerical, v_nominal_numerical, u_nominal_numerical)
 ddq_resulting_optimal = data.ddq
 
 print("\n--- Optimization Results (Single Time Instance) ---")
-print(f"Optimal Cost: {cost_optimal}")
-print(f"Desired Acceleration (ddq_des):\n{ddq_desired_numerical.T}")
+# print(f"Optimal Cost: {cost_optimal}")
+print(f"Desired Acceleration (ddq_des):\n{qdd_desired_numerical.T}")
 print(f"Optimal Configuration (q_opt):\n{q_optimal.T}")
 print(f"Optimal Velocity (v_opt):\n{v_optimal.T}")
 print(f"Optimal Torques (u_opt):\n{tau_optimal.T}")
@@ -167,49 +184,49 @@ print(f"Resulting Acceleration (ddq_actual):\n{ddq_resulting_optimal.T}")
 
 
 # Verify how close we got to the desired acceleration
-print(f"\nError in achieved ddq vs. desired ddq (norm): {np.linalg.norm(ddq_resulting_optimal - ddq_desired_numerical)}")
+print(f"\nError in achieved ddq vs. desired ddq (norm): {np.linalg.norm(ddq_resulting_optimal - qdd_desired_numerical)}")
 
-printFk(q)
-printFk(q_optimal)
-exit()
+# printFk(q)
+# printFk(q_optimal)
+# exit()
 # vis via rerun
-import rerun as rr
-from go2.mpac_logging.mpac_logging import robot_zoo
-from go2.mpac_logging.mpac_logging.rerun.robot_logger import RobotLogger
-from go2.mpac_logging.mpac_logging.rerun.utils import rerun_initialize, rerun_store
+# import rerun as rr
+# from go2.mpac_logging.mpac_logging import robot_zoo
+# from go2.mpac_logging.mpac_logging.rerun.robot_logger import RobotLogger
+# from go2.mpac_logging.mpac_logging.rerun.utils import rerun_initialize, rerun_store
 
-rr.init("simple_robot_example", spawn=False)
-robot_logger = RobotLogger.from_zoo("go2_description")
-rerun_initialize("fk_test", spawn=True)
-print("works")
+# rr.init("simple_robot_example", spawn=False)
+# robot_logger = RobotLogger.from_zoo("go2_description")
+# rerun_initialize("fk_test", spawn=True)
+# print("works")
 
-import time
-current_time = time.time()
+# import time
+# current_time = time.time()
 
-base_position = q_optimal[:3]
-base_orientation = R.from_euler("xyz", q_optimal[3:6], degrees=False).as_quat()
-joint_positions = {
-    "FL_hip_joint" : 0, #q_optimal[6], 
-    "FL_thigh_joint" : q_optimal[7],
-    "FL_calf_joint" : q_optimal[8],
-    "FR_hip_joint" : 0, #q_optimal[9],
-    "FR_thigh_joint" : q_optimal[10],
-    "FR_calf_joint" : q_optimal[11],
-    "RL_hip_joint" : 0, #q_optimal[12],
-    "RL_thigh_joint" : q_optimal[13],
-    "RL_calf_joint" : q_optimal[14],
-    "RR_hip_joint" : 0, #q_optimal[15],
-    "RR_thigh_joint" : q_optimal[16],
-    "RR_calf_joint" : q_optimal[17],
-}
-robot_logger.log_state(
-    logtime=current_time,
-    base_position=base_position,
-    base_orientation=base_orientation,
-    joint_positions=joint_positions
-)
-rr.save("fk_test.rrd")
-exit()
+# base_position = q_optimal[:3]
+# base_orientation = R.from_euler("xyz", q_optimal[3:6], degrees=False).as_quat()
+# joint_positions = {
+#     "FL_hip_joint" : q_optimal[6], 
+#     "FL_thigh_joint" : q_optimal[7],
+#     "FL_calf_joint" : q_optimal[8],
+#     "FR_hip_joint" : q_optimal[9],
+#     "FR_thigh_joint" : q_optimal[10],
+#     "FR_calf_joint" : q_optimal[11],
+#     "RL_hip_joint" : q_optimal[12],
+#     "RL_thigh_joint" : q_optimal[13],
+#     "RL_calf_joint" : q_optimal[14],
+#     "RR_hip_joint" : q_optimal[15],
+#     "RR_thigh_joint" : q_optimal[16],
+#     "RR_calf_joint" : q_optimal[17],
+# }
+# robot_logger.log_state(
+#     logtime=current_time,
+#     base_position=base_position,
+#     base_orientation=base_orientation,
+#     joint_positions=joint_positions
+# )
+# rr.save("fk_test.rrd")
+# exit()
 
 
 fig, axs = plt.subplots(3, 3, figsize=(15, 8))  # Wider layout
@@ -219,7 +236,7 @@ axs = axs.flatten()
 
 # First subplot: qdd comparison
 axs[0].plot(ddq_resulting_optimal, label="qdd_optimized")
-axs[0].plot(ddq_desired_numerical, label="qdd_desired")
+axs[0].plot(qdd_desired_numerical, label="qdd_desired")
 axs[0].set_title("qdd comparison")
 axs[0].legend()
 
@@ -247,7 +264,7 @@ axs[4].plot(f_nominal_numerical, label="f_desired")
 axs[4].set_title("f comparison")
 axs[4].legend()
 
-Jc_F_optimal= computeFullContactJacobians(q_optimal).T @ f_nominal_numerical
+Jc_F_optimal= computeFullContactJacobians(q_optimal).T @ f_optimal
 Jc_F_nominal_numerical = computeFullContactJacobians(q_nominal_numerical).T @ f_nominal_numerical
 # 6 subplot: Jc comparison
 axs[5].plot(Jc_F_optimal, label="Jc_F_optimal")

@@ -54,6 +54,8 @@ data = model.createData()
 ad_model = pinocchio.casadi.Model(model)
 ad_data = ad_model.createData()
 
+# print(model.nq)
+
 # for i, frame in enumerate(model.frames):
 #     frameType = frame.type.name if hasattr(frame.type, 'name') else str(frame.type)
 #     print(f"{frame.name}, {i}, {frameType}")

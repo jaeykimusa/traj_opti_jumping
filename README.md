@@ -4,6 +4,26 @@ Developing the first baseline of trajectory optimization for jumping controller.
 
 PROGRESS:
 
+7/13/2025
+- .
+- TODO:
+  - 
+
+7/12/2025
+- .
+- TODO:
+  - 
+
+7/11/2025
+- .
+- TODO:
+  - 
+
+7/10/2025
+- .
+- TODO:
+  - 
+
 7/1/2025
 - .
 - TODO:

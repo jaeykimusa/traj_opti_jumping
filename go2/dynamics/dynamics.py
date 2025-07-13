@@ -2,6 +2,7 @@
 import pinocchio as pin
 from go2.robot.robot import *
 from go2.utils.math_utils import *
+from go2.dynamics.id import *
 
 def computeJointTorques(model, data, q, qd, qdd):
     return pin.rnea(model, data, q, qd, qdd).reshape(-1,1) # 18 x 1 
@@ -75,6 +76,30 @@ def printContactForces(*args):
         print(f"Force at RR_EE: {Fc_RR[0]:.3f} {Fc_RR[1]:.3f} {Fc_RR[2]:.3f}")
     else:
         raise ValueError("Expected 1 or 4 arguments.")
+
+def computeStandingContactForces(q):
+    """
+    Compute contact forces that achieve standing equilibrium.
+    For standing: tau_motor + Jc^T * f = g
+    Since tau_motor[0:6] = 0 (unactuated), we need: Jc[0:6,:]^T * f = g[0:6]
+    """
+    g = pin.computeGeneralizedGravity(model, data, q)
+    Jc = computeFullContactJacobians(q)
+    
+    # Extract the part of Jacobian corresponding to floating base
+    Jc_base = Jc[:, 0:6]  # Contact forces' effect on base
+    
+    # We need to solve: Jc_base^T * f = g[0:6]
+    # This is an underdetermined system (12 unknowns, 6 equations)
+    # We'll use least squares with additional constraints
+    
+    # Method 1: Pseudo-inverse (minimum norm solution)
+    f = np.linalg.pinv(Jc_base.T) @ g[0:6]
+    
+    # Method 2: QP to ensure physical constraints
+    # (Better approach - ensures positive normal forces, friction limits, etc.)
+    
+    return f
 
 def computeContactJacobiansTimeVariation(q, qd):
     # J_FL = pin.getFrameJacobian(model, data, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)

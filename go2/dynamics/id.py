@@ -34,6 +34,13 @@ def computeFullContactJacobians(q):
     return Jc
 
 def id(q, v, qdd, f):
+    """
+    Inverse dynamics: compute motor torques needed for desired acceleration.
+    
+    Returns tau_motor where: tau_motor + J_c^T * f = M*qdd + C*v + g
+    
+    For floating base robots, tau_motor[0:6] should be zero (unactuated).
+    """
     if isinstance(q, (ca.SX, ca.MX)):  # CasADi symbolic mode
         # Create symbolic variables
         cs_q = ca.SX.sym("q", NUM_Q, 1)
@@ -46,7 +53,7 @@ def id(q, v, qdd, f):
         
         # Compute total generalized forces
         cs_tau_rnea = pinocchio.casadi.rnea(ad_model, ad_data, cs_q, cs_v, cs_qdd) 
-        cs_tau_actuator = cs_tau_rnea- cs_Jc.T @ cs_f
+        cs_tau_actuator = cs_tau_rnea - cs_Jc.T @ cs_f
         
         # Create function with correct inputs
         cs_tau_fn = ca.Function("create_tau_fn", [cs_q, cs_v, cs_qdd, cs_f], [cs_tau_actuator])

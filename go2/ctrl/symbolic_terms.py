@@ -7,7 +7,7 @@ from go2.dynamics.dynamics import *
 from go2.dynamics.fd import *
 from go2.dynamics.id import *
 from go2.utils.math_utils import *
-# from go2.vis.rerun import *
+from go2.vis.rerun import *
 from go2.robot.morphology import *
 
 import matplotlib.pyplot as plt
@@ -16,123 +16,90 @@ import matplotlib.pyplot as plt
 q = getDefaultStandStateFullOptimization(model, data)
 qd = np.zeros(18)
 qdd = np.zeros(18)
+f = computeStandingContactForces(q)
+u = id(q, qd, qdd, f)
 
-# Compute reference values for standing equilibrium
-g = computeGravity(q)  # Gravity forces
-Jc = computeFullContactJacobians(q)
-f = computeFullContactForces(model, data, q, qd, qdd)
-u = g - Jc.T @ f  # For standing: u + Jc^T*f = g
+x_d = fk(q)
 
 opti = ca.Opti()
 
 # Decision variables
 q_opt = opti.variable(NUM_Q, 1) 
+qd_opt = opti.variable(NUM_Q, 1)
+qdd_opt = opti.variable(NUM_Q, 1)
+u_opt = opti.variable(NUM_Q, 1)
 f_opt = opti.variable(NUM_F, 1)
 
-# Derived quantities (not decision variables)
-qd_opt = np.zeros((NUM_Q, 1))  # Always zero for standing
-qdd_opt = np.zeros((NUM_Q, 1))  # Always zero for standing
-
-# Parameters
+# desired parameters
 q_d = opti.parameter(NUM_Q, 1)
+qd_d = opti.parameter(NUM_Q, 1)
+qdd_d = opti.parameter(NUM_Q, 1)
+u_d = opti.parameter(NUM_Q, 1)
 f_d = opti.parameter(NUM_F, 1)
-robot_mass = opti.parameter(1, 1)
 
-# ===== CONSTRAINTS FOR STANDING EQUILIBRIUM =====
+# equality constraints
+# opti.subject_to(qdd_opt == fd(q_opt, qd_opt, u_opt, f_opt))
+# opti.subject_to(qdd_opt == np.zeros(NUM_Q).reshape(-1, 1))
+# opti.subject_to(qd_opt == np.zeros(NUM_Q).reshape(-1, 1))
+# opti.subject_to(x_d == fk(q_opt))
+# opti.subject_to(u_opt == id(q_opt, qd_opt, qdd_opt, f_opt))
 
-# 1. Base position constraints
-opti.subject_to(q_opt[0] == q_d[0])  # x position
-opti.subject_to(q_opt[1] == q_d[1])  # y position
-opti.subject_to(q_opt[2] == q_d[2])  # z position (height)
-
-# 2. Base orientation constraints - keep robot upright
-opti.subject_to(q_opt[3] == 0)  # rx = 0 (no roll)
-opti.subject_to(q_opt[4] == 0)  # ry = 0 (no pitch)
-opti.subject_to(q_opt[5] == q_d[5])  # rz = desired yaw
-
-# 3. Dynamics constraint for standing equilibrium
-# For standing: M*0 + C*0 + g = u + Jc^T*f
-# Since qdd=0 and qd=0, this becomes: g = u + Jc^T*f
-g_sym = computeGravity(q_opt)
-Jc_sym = computeFullContactJacobians(q_opt)
-
-# The equilibrium condition
-u_opt = g_sym - Jc_sym.T @ f_opt
-
-# 4. Joint torque limits
+opti.subject_to(qdd_opt == np.zeros(NUM_Q).reshape(-1, 1))
+opti.subject_to(qd_opt == np.zeros(NUM_Q).reshape(-1, 1))
+opti.subject_to(x_d == fk(q_opt))
+# inequality constraints
 tau_max = 45.0  # Nm
+joint_lower = np.array([-2.5, -2.5, -2.5] * 4)
+joint_upper = np.array([2.5, 2.5, 2.5] * 4)
 opti.subject_to(u_opt[6:18] >= -tau_max)
 opti.subject_to(u_opt[6:18] <= tau_max)
-
-# 5. Joint angle constraints (optional)
-joint_lower = np.array([-3.14, -0.5, -2.5] * 4)
-joint_upper = np.array([3.14, 1.5, -0.5] * 4)
 opti.subject_to(q_opt[6:18] >= joint_lower.reshape(-1, 1))
 opti.subject_to(q_opt[6:18] <= joint_upper.reshape(-1, 1))
-
-# 6. Contact force constraints with friction cone
 for i in range(4):  # 4 feet
     foot_idx = i * 3
     fx = f_opt[foot_idx]
     fy = f_opt[foot_idx + 1] 
     fz = f_opt[foot_idx + 2]
-    
     # Normal force must be positive
-    opti.subject_to(fz >= 5.0)   # Minimum normal force
+    opti.subject_to(fz >= 0.0)   # Minimum normal force
     opti.subject_to(fz <= 150.0)  # Maximum normal force
-    
-    # Friction pyramid constraint
     opti.subject_to(fx <= MU * fz)
     opti.subject_to(fx >= -MU * fz)
     opti.subject_to(fy <= MU * fz)
     opti.subject_to(fy >= -MU * fz)
 
-# 7. Total vertical force should equal robot weight
-total_fz = ca.sum1(f_opt[2::3])
-opti.subject_to(total_fz == robot_mass * 9.81)
-
 # ===== COST FUNCTION =====
 cost = 0
+Q_COST_WEIGHT = 1
+QD_COST_WEIGHT = 1
+QDD_COST_WEIGHT = 1
+U_COST_WEIGHT = 0.01
+F_COST_WEIGHT = 0.001
 
-# 1. Configuration cost - stay close to reference joint angles
-cost += 1000 * ca.sumsqr(q_opt[6:] - q_d[6:])
-
-# 2. Minimize joint torques
-cost += 10 * ca.sumsqr(u_opt[6:18])
-
-# 3. Force distribution - prefer equal loading
-target_fz = robot_mass * 9.81 / 4
-for i in range(4):
-    cost += 100 * (f_opt[i*3 + 2] - target_fz)**2
-    # Minimize tangential forces
-    cost += 50 * f_opt[i*3]**2      # fx
-    cost += 50 * f_opt[i*3 + 1]**2  # fy
-
-# 4. Penalize deviation from reference forces
-cost += 10 * ca.sumsqr(f_opt - f_d)
+cost += Q_COST_WEIGHT * (q_opt - q_d).T @ (q_opt - q_d)
+cost += QD_COST_WEIGHT * (qd_opt - qd_d).T @ (qd_opt - qd_d)
+cost += QDD_COST_WEIGHT * (qdd_opt - qdd_d).T @ (qdd_opt - qdd_d)
+cost += U_COST_WEIGHT * (u_opt - u_d).T @ (u_opt - u_d)
+cost += F_COST_WEIGHT * (f_opt - f_d).T @ (f_opt - f_d)
 
 opti.minimize(cost)
 
 # Set parameter values
 opti.set_value(q_d, q.reshape(-1, 1))
+opti.set_value(qd_d, qd.reshape(-1, 1))
+opti.set_value(qdd_d, qdd.reshape(-1, 1))
+opti.set_value(u_d, u.reshape(-1, 1))
 opti.set_value(f_d, f.reshape(-1, 1))
-opti.set_value(robot_mass, getMass(model))
 
 # Initial guess
 opti.set_initial(q_opt, q.reshape(-1, 1))
+opti.set_initial(qd_opt, qd.reshape(-1, 1))
+opti.set_initial(qdd_opt, qdd.reshape(-1, 1))
+opti.set_initial(u_opt, u.reshape(-1, 1))
 opti.set_initial(f_opt, f.reshape(-1, 1))
 
 # Solver options
-opti.solver("ipopt", {"expand": True}, {
-    "max_iter": 1000,
-    "tol": 1e-6,
-    "acceptable_tol": 1e-4,
-    "print_level": 5,
-    "linear_solver": "mumps",
-    "hessian_approximation": "limited-memory",
-    "mu_strategy": "adaptive",
-    "warm_start_init_point": "yes"
-})
+opti.solver("ipopt", {"expand": True}, {"max_iter": 1000})
 
 try:
     sol = opti.solve()
@@ -186,7 +153,7 @@ try:
     print(f"\nTotal vertical force - Optimal: {total_fz_opt:.2f} N")
     print(f"Expected weight: {12.0 * 9.81:.2f} N")
 
-    # visualize("test", q=q_optimal)
+    visualize("test", q=q_optimal)
     
 except RuntimeError as e:
     print(f"\n=== OPTIMIZATION FAILED ===")
@@ -247,28 +214,7 @@ except RuntimeError as e:
     plt.show()
     
 
-    # print(f"\nBase orientation debug: {q_debug[3:6].flatten()}")
-    # print(f"Velocity norm: {np.linalg.norm(qd_debug):.6f}")
-    # print(f"Acceleration norm: {np.linalg.norm(qdd_debug):.6f}")
-    
-    # # Check constraint violations
-    # try:
-    #     ddq_check = fd(q_debug, qd_debug, u_debug, f_debug)
-    #     print(f"Dynamics constraint error: {np.linalg.norm(ddq_check - qdd_debug):.6e}")
-    # except:
-    #     print("Could not evaluate dynamics constraint")
-    
-    # # Still create debug plots
-    # fig, ax = plt.subplots(1, 1, figsize=(10, 6))
-    # ax.bar(['q norm', 'qd norm', 'qdd norm', 'u norm', 'f norm'],
-    #        [np.linalg.norm(q_debug), np.linalg.norm(qd_debug), 
-    #         np.linalg.norm(qdd_debug), np.linalg.norm(u_debug), 
-    #         np.linalg.norm(f_debug)])
-    # ax.set_ylabel('L2 Norm')
-    # ax.set_title('Debug: Norms of Decision Variables')
-    # plt.show()
-
-exit()
+# exit()
 
 fig, axs = plt.subplots(3, 3, figsize=(15, 8))  # Wider layout
 

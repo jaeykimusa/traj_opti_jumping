@@ -11,11 +11,11 @@ setup(
     # description='A Python package for Go2 robot simulations',
     # long_description=open('README.md').read(),
     # long_description_content_type='text/markdown',
-    # url='https://github.com/yourusername/traj_opti_jumping',
+    url='https://github.com/jaeykimusa/traj_opti_jumping',
     # classifiers=[
     #     'Programming Language :: Python :: 3',
     #     'License :: OSI Approved :: MIT License',
-    #     'Operating System :: OS Independent',
+    #     'Operating System :: Ububtu 22.04.4 LTS (Jammy Jellyfish)',
     # ],
     # python_requires='>=3.8', # Specify minimum Python version
     # install_requires=[ # List any external dependencies your code needs

@@ -1,19 +1,24 @@
 # jump_with_jakub.py
 
-from go2.kinematics.kinematics import *
-from go2.kinematics.fk import *
-from go2.dynamics.id import *
-from go2.utils.math_utils import *
-from go2.robot.robot import *
-from go2.robot.morphology import *
 from pathlib import Path
 from sys import argv
 
+from go2.kinematics.kinematics import *
+from go2.kinematics.fk import *
+from go2.dynamics.dynamics import *
+from go2.dynamics.fd import *
+from go2.dynamics.id import *
+from go2.utils.math_utils import *
+from go2.vis.rerun import *
+from go2.robot.morphology import *
+from go2.utils.io_utils import *
+
 import matplotlib.pyplot as plt
-import scipy.sparse as sp
-import os
+
+q_ref, qd_ref, f_ref = readReferenceData("q_ref_forward_jump.txt", "v_ref.txt", "f_ref.txt", "./go2/ctrl/data/")
 
 N = 100
+TIMESTEP = 0.02 # seconds
 
 STANCE_PHASE_0 = 0
 STANCE_PHASE_1 = 0.3 * N

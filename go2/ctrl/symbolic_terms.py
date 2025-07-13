@@ -16,52 +16,67 @@ import matplotlib.pyplot as plt
 q = getDefaultStandStateFullOptimization(model, data)
 qd = np.zeros(18)
 qdd = np.zeros(18)
-f = computeFullContactForces(model, data, q, qd, qdd)
-u = id(q, qd, qdd, f)
 
-# x = fd(q, qd, u, f)
-# print(x)
-# exit()
+# Compute reference values for standing equilibrium
+g = computeGravity(q)  # Gravity forces
+Jc = computeFullContactJacobians(q)
+f = computeFullContactForces(model, data, q, qd, qdd)
+u = g - Jc.T @ f  # For standing: u + Jc^T*f = g
+
 # print("Reference standing configuration:")
 # print(f"q_ref: {q}")
 # print(f"Orientation (rx,ry,rz): {q[3:6]}")
 # print(f"Base height: {q[2]}")
-# print(f"Reference joint torques: {tau[6:]}")
+# print(f"Reference joint torques: {u[6:]}")
 
 opti = ca.Opti()
 
-# decision variables
+# Decision variables
 q_opt = opti.variable(NUM_Q, 1) 
-qd_opt = opti.variable(NUM_Q, 1) 
-qdd_opt = opti.variable(NUM_Q, 1)
-u_opt = opti.variable(NUM_Q, 1) 
 f_opt = opti.variable(NUM_F, 1)
 
-# desired parameters
+# Derived quantities (not decision variables)
+qd_opt = np.zeros((NUM_Q, 1))  # Always zero for standing
+qdd_opt = np.zeros((NUM_Q, 1))  # Always zero for standing
+
+# Parameters
 q_d = opti.parameter(NUM_Q, 1)
-qd_d = opti.parameter(NUM_Q, 1)
-qdd_d = opti.parameter(NUM_Q, 1)
-u_d = opti.parameter(NUM_Q, 1)
 f_d = opti.parameter(NUM_F, 1)
+robot_mass = opti.parameter(1, 1)
 
-# s.t.
-# opti.subject_to(q_opt == q_d)
-opti.subject_to(qd_opt == np.zeros(NUM_Q).reshape(-1, 1))
-opti.subject_to(qdd_opt == fd(q_d, qd_d, u_d, f_d))
-opti.subject_to(qdd_opt == np.zeros(NUM_Q).reshape(-1, 1))
-opti.subject_to(u_opt == id(q_opt, qd_opt, qdd_opt, f_opt))
-# opti.subject_to(q_opt[:6] == q_d[:6])
+# ===== CONSTRAINTS FOR STANDING EQUILIBRIUM =====
 
-# joint angle constraints
-# joint_lower = np.array([-3.14, -1.57, -3.14] * 4)
-# joint_upper = np.array([3.14, 1.57, 3.14] * 4)
-# opti.subject_to(q_opt[6:18] >= joint_lower.reshape(-1, 1))
-# opti.subject_to(q_opt[6:18] <= joint_upper.reshape(-1, 1))
+# 1. Base position constraints
+opti.subject_to(q_opt[0] == q_d[0])  # x position
+opti.subject_to(q_opt[1] == q_d[1])  # y position
+opti.subject_to(q_opt[2] == q_d[2])  # z position (height)
 
+# 2. Base orientation constraints - keep robot upright
+opti.subject_to(q_opt[3] == 0)  # rx = 0 (no roll)
+opti.subject_to(q_opt[4] == 0)  # ry = 0 (no pitch)
+opti.subject_to(q_opt[5] == q_d[5])  # rz = desired yaw
+
+# 3. Dynamics constraint for standing equilibrium
+# For standing: M*0 + C*0 + g = u + Jc^T*f
+# Since qdd=0 and qd=0, this becomes: g = u + Jc^T*f
+g_sym = computeGravity(q_opt)
+Jc_sym = computeFullContactJacobians(q_opt)
+
+# The equilibrium condition
+u_opt = g_sym - Jc_sym.T @ f_opt
+
+# 4. Joint torque limits
 tau_max = 45.0  # Nm
 opti.subject_to(u_opt[6:18] >= -tau_max)
 opti.subject_to(u_opt[6:18] <= tau_max)
 
+# 5. Joint angle constraints (optional)
+joint_lower = np.array([-3.14, -0.5, -2.5] * 4)
+joint_upper = np.array([3.14, 1.5, -0.5] * 4)
+opti.subject_to(q_opt[6:18] >= joint_lower.reshape(-1, 1))
+opti.subject_to(q_opt[6:18] <= joint_upper.reshape(-1, 1))
+
+# 6. Contact force constraints with friction cone
 for i in range(4):  # 4 feet
     foot_idx = i * 3
     fx = f_opt[foot_idx]
@@ -69,82 +84,61 @@ for i in range(4):  # 4 feet
     fz = f_opt[foot_idx + 2]
     
     # Normal force must be positive
-    opti.subject_to(fz >= 0.0)   # Minimum normal force
-    opti.subject_to(fz <= INFINITY)  # Maximum normal force
+    opti.subject_to(fz >= 5.0)   # Minimum normal force
+    opti.subject_to(fz <= 150.0)  # Maximum normal force
     
-    # Friction cone constraint
+    # Friction pyramid constraint
     opti.subject_to(fx <= MU * fz)
     opti.subject_to(fx >= -MU * fz)
     opti.subject_to(fy <= MU * fz)
     opti.subject_to(fy >= -MU * fz)
 
-# # 10. Total vertical force should approximately equal robot weight
-# total_fz = ca.sum1(f_opt[2::3])
-# robot_weight = getMass(model) * 9.81  # Assuming 12kg robot
-# opti.subject_to(total_fz >= robot_weight * 0.95)
-# opti.subject_to(total_fz <= robot_weight * 1.05)
+# 7. Total vertical force should equal robot weight
+total_fz = ca.sum1(f_opt[2::3])
+opti.subject_to(total_fz == robot_mass * 9.81)
 
 # ===== COST FUNCTION =====
 cost = 0
-COST_WEIGHT_Q = 1
-COST_WEIGHT_QD = 0.1
-COST_WEIGHT_QDD = 0.1
-COST_WEIGHT_U = 0.2
-COST_WEIGHT_F = 0.2
 
-# 1. Configuration cost - heavily weight orientation to keep robot upright
-# cost += ca.sumsqr(q_opt[3:6]) * 500  # Very high weight on keeping orientation zero
-# cost += ca.sumsqr(q_opt[6:] - q_d[6:]) * 100  # Joint angles
+# 1. Configuration cost - stay close to reference joint angles
+cost += 1000 * ca.sumsqr(q_opt[6:] - q_d[6:])
 
-# 2. Velocity and acceleration should be exactly zero (add extra penalty)
-# cost += ca.sumsqr(qd_opt) * 100
-# cost += ca.sumsqr(qdd_opt) * 100
+# 2. Minimize joint torques
+cost += 10 * ca.sumsqr(u_opt[6:18])
 
-# 3. Joint torque minimization
-# cost += ca.sumsqr(u_opt[6:18]) * 10
+# 3. Force distribution - prefer equal loading
+target_fz = robot_mass * 9.81 / 4
+for i in range(4):
+    cost += 100 * (f_opt[i*3 + 2] - target_fz)**2
+    # Minimize tangential forces
+    cost += 50 * f_opt[i*3]**2      # fx
+    cost += 50 * f_opt[i*3 + 1]**2  # fy
 
-# # 4. Force distribution
-# target_fz = robot_weight / 4
-# for i in range(4):
-#     cost += (f_opt[i*3 + 2] - target_fz)**2 * 100
-#     cost += f_opt[i*3]**2 * 50      # Minimize fx
-#     cost += f_opt[i*3 + 1]**2 * 50  # Minimize fy
-
-# 5. Stay close to desired configuration
-cost += COST_WEIGHT_Q * (q_opt - q_d).T @ (q_opt - q_d)
-cost += COST_WEIGHT_QD * (qd_opt - qd_d).T @ (qd_opt - q_d)
-cost += COST_WEIGHT_QDD * (qdd_opt - qdd_d).T @ (qdd_opt - q_d)
-cost += COST_WEIGHT_U * (u_opt - u_d).T @ (u_opt - u_d)
-cost += COST_WEIGHT_F * (f_opt - f_d).T @ (f_opt - f_d)
-
+# 4. Penalize deviation from reference forces
+cost += 10 * ca.sumsqr(f_opt - f_d)
 
 opti.minimize(cost)
 
 # Set parameter values
-opti.set_value(q_d, q.reshape(-1, 1)) #.reshape(-1, 1))
-opti.set_value(qd_d, qd.reshape(-1, 1))
-opti.set_value(qdd_d, qdd.reshape(-1, 1))
-opti.set_value(u_d, u.reshape(-1, 1))
+opti.set_value(q_d, q.reshape(-1, 1))
 opti.set_value(f_d, f.reshape(-1, 1))
+opti.set_value(robot_mass, getMass(model))
 
 # Initial guess
 opti.set_initial(q_opt, q.reshape(-1, 1))
-opti.set_initial(qd_opt, qd.reshape(-1, 1)) #np.zeros((18, 1)))
-opti.set_initial(qdd_opt, qdd.reshape(-1, 1)) #np.zeros((18, 1)))
-opti.set_initial(u_opt, u.reshape(-1, 1))
 opti.set_initial(f_opt, f.reshape(-1, 1))
 
 # Solver options
-opti.solver("ipopt", {"expand": True}, {"max_iter": 3000})
-#     "max_iter": 3000,
-#     "tol": 1e-8,
-#     "acceptable_tol": 1e-6,
-#     "print_level": 5,
-#     "linear_solver": "mumps",
-#     "hessian_approximation": "limited-memory",
-#     "mu_strategy": "adaptive",
-#     "warm_start_init_point": "yes"
-# })
+opti.solver("ipopt", {"expand": True}, {
+    "max_iter": 1000,
+    "tol": 1e-6,
+    "acceptable_tol": 1e-4,
+    "print_level": 5,
+    "linear_solver": "mumps",
+    "hessian_approximation": "limited-memory",
+    "mu_strategy": "adaptive",
+    "warm_start_init_point": "yes"
+})
 
 try:
     sol = opti.solve()
@@ -193,10 +187,12 @@ try:
         print(f"    Optimal:  fx={fx_opt:.2f}, fy={fy_opt:.2f}, fz={fz_opt:.2f}")
         
         friction_ratio = np.sqrt(fx_opt**2 + fy_opt**2) / fz_opt
-        print(f"    Friction utilization: {friction_ratio/mu*100:.1f}%")
+        print(f"    Friction utilization: {friction_ratio/MU*100:.1f}%")
     
     print(f"\nTotal vertical force - Optimal: {total_fz_opt:.2f} N")
     print(f"Expected weight: {12.0 * 9.81:.2f} N")
+
+    visualize("test", q=q_optimal)
     
 except RuntimeError as e:
     print(f"\n=== OPTIMIZATION FAILED ===")

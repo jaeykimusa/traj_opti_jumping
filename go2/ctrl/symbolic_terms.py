@@ -7,7 +7,7 @@ from go2.dynamics.dynamics import *
 from go2.dynamics.fd import *
 from go2.dynamics.id import *
 from go2.utils.math_utils import *
-from go2.vis.rerun import *
+# from go2.vis.rerun import *
 from go2.robot.morphology import *
 
 import matplotlib.pyplot as plt
@@ -22,12 +22,6 @@ g = computeGravity(q)  # Gravity forces
 Jc = computeFullContactJacobians(q)
 f = computeFullContactForces(model, data, q, qd, qdd)
 u = g - Jc.T @ f  # For standing: u + Jc^T*f = g
-
-# print("Reference standing configuration:")
-# print(f"q_ref: {q}")
-# print(f"Orientation (rx,ry,rz): {q[3:6]}")
-# print(f"Base height: {q[2]}")
-# print(f"Reference joint torques: {u[6:]}")
 
 opti = ca.Opti()
 
@@ -192,7 +186,7 @@ try:
     print(f"\nTotal vertical force - Optimal: {total_fz_opt:.2f} N")
     print(f"Expected weight: {12.0 * 9.81:.2f} N")
 
-    visualize("test", q=q_optimal)
+    # visualize("test", q=q_optimal)
     
 except RuntimeError as e:
     print(f"\n=== OPTIMIZATION FAILED ===")

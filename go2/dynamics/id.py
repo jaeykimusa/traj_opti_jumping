@@ -6,7 +6,7 @@ from go2.dynamics.fd import *
 from go2.utils.math_utils import *
 
 def computeFullContactJacobians(q):
-    if isinstance(q, (ca.SX, ca.MX)):
+    if isinstance(q, ca.SX):
         Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
         Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, Frame.FR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
         Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, Frame.RL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
@@ -33,31 +33,29 @@ def computeFullContactJacobians(q):
         Jc = np.vstack(J_list)
     return Jc
 
-def id(q, v, tau, f):
+def id(q, v, qdd, f):
     if isinstance(q, (ca.SX, ca.MX)):  # CasADi symbolic mode
+        # Create symbolic variables
         cs_q = ca.SX.sym("q", NUM_Q, 1)
         cs_v = ca.SX.sym("qd", NUM_Q, 1)
-        cs_u = ca.SX.sym("u", NUM_Q, 1)
-        cs_tau = ca.SX.sym("u", NUM_Q, 1)
+        cs_qdd = ca.SX.sym("qdd", NUM_Q, 1)
         cs_f = ca.SX.sym("f", NUM_F, 1)
-        cs_Jc = ca.SX.sym("J_c", NUM_F, NUM_Q)
         
+        # Compute contact Jacobian symbolically
         cs_Jc = computeFullContactJacobians(cs_q)
-        cs_full_Jc_fn = ca.Function("cs_full_Jc_fn", [cs_q], [cs_Jc])
-        cs_Jc = cs_full_Jc_fn(cs_q)
-
-        cs_u = cs_tau + cs_Jc.T @ cs_f
-        pinocchio.casadi.aba(ad_model, ad_data, cs_q, cs_v, cs_u)
-        a_ad = ad_data.ddq
-        cs_aba_fn = ca.Function("create_aba_fn", [cs_q, cs_v, cs_tau, cs_f], [a_ad])
-
-        ddq = cs_aba_fn(q, v, tau, f)
+        
+        # Compute total generalized forces
+        cs_tau_rnea = pinocchio.casadi.rnea(ad_model, ad_data, cs_q, cs_v, cs_qdd) 
+        cs_tau_actuator = cs_tau_rnea- cs_Jc.T @ cs_f
+        
+        # Create function with correct inputs
+        cs_tau_fn = ca.Function("create_tau_fn", [cs_q, cs_v, cs_qdd, cs_f], [cs_tau_actuator])
+        
+        # Evaluate at given values
+        tau_actuator = cs_tau_fn(q, v, qdd, f)
        
     else: 
         Jc = computeFullContactJacobians(q)
-        u = tau + Jc.T @ f        
-        pin.aba(model, data, q, v, u)
-        ddq = data.ddq
+        tau_actuator = pin.rnea(model, data, q, v, qdd) - Jc.T @ f        
 
-    return ddq
-
+    return tau_actuator

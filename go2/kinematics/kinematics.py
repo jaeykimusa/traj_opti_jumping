@@ -7,7 +7,8 @@ from go2.robot.robot import *
 from go2.robot.morphology import *
 
 
-def getDefaultStandState(model, data, foot_target_positions=None):
+# Alternative: If you want to optimize all values but ensure zero orientation
+def getDefaultStandStateFullOptimization(model, data, foot_target_positions=None):
     # Default foot positions if not provided
     if foot_target_positions is None:
         foot_target_positions = {
@@ -20,39 +21,49 @@ def getDefaultStandState(model, data, foot_target_positions=None):
     feet_names = FOOT_NAMES
     feet_ids = EE_FRAME_IDS
     
-    # Initial guess - base at 0.3m height with zero orientation
-    base_xyz = np.array([0.0, 0.0, 0.3])  # Initial guess for base position
-    base_rpy = np.array([0.0, 0.0, 0.0])  # Initial orientation (roll, pitch, yaw)
-    
-    # Initial joint angles - typical standing configuration
-    joints = np.array([0.0, 0.8, -1.6] * 4)  # Slightly bent legs
+    # Initial guess
+    base_xyz = np.array([0.0, 0.0, 0.3])
+    base_rpy = np.array([0.0, 0.0, 0.0])
+    joints = np.array([0.0, 0.8, -1.6] * 4)
     
     q_init = np.concatenate([base_xyz, base_rpy, joints])
     
-    # Bounds for optimization
+    # Bounds for optimization - allow tiny variations to satisfy optimizer
     lb = q_init.copy()
     ub = q_init.copy()
     
     # Base position bounds
-    lb[:3] = np.array([-0.1, -0.1, 0.2])   # x,y,z min
-    ub[:3] = np.array([0.1, 0.1, 0.5])     # x,y,z max
+    lb[:3] = np.array([-0.001, -0.001, 0.2])   # Very small x,y movement allowed
+    ub[:3] = np.array([0.001, 0.001, 0.5])   
     
-    # Base orientation bounds (roll, pitch, yaw in radians)
-    lb[3:6] = np.array([-0.2, -0.2, -0.2])  # Small allowed orientation variation
-    ub[3:6] = np.array([0.2, 0.2, 0.2])
+    # Base orientation bounds - very small tolerance
+    tolerance = 1e-6
+    lb[3:6] = np.array([-tolerance, -tolerance, -tolerance])
+    ub[3:6] = np.array([tolerance, tolerance, tolerance])
     
-    # Joint angle bounds (adjust according to your robot's limits)
-    joint_lb = np.array([-0.5, 0.5, -2.0] * 4)  # Min angles for each leg
-    joint_ub = np.array([0.5, 1.5, -1.0] * 4)   # Max angles for each leg
-    lb[6:] = joint_lb  # Note: changed from 7 to 6 because we have 6 base DOFs now
+    # Joint angle bounds
+    joint_lb = np.array([-0.5, 0.5, -2.0] * 4)
+    joint_ub = np.array([0.5, 1.5, -1.0] * 4)
+    lb[6:] = joint_lb
     ub[6:] = joint_ub
     
     def pose_error(q):
         pinocchio.framesForwardKinematics(model, data, q)
         error = []
+        
+        # Foot position errors
         for name, fid in zip(feet_names, feet_ids):
             err = data.oMf[fid].translation - foot_target_positions[name]
             error.append(err)
+        
+        # Add strong penalty for orientation deviation
+        orientation_penalty = q[3:6] * 10000.0
+        error.append(orientation_penalty)
+        
+        # Add penalty for base x,y deviation
+        base_xy_penalty = q[:2] * 1000.0
+        error.append(base_xy_penalty)
+        
         return np.concatenate(error)
     
     # Run optimization
@@ -61,11 +72,20 @@ def getDefaultStandState(model, data, foot_target_positions=None):
         x0=q_init,
         bounds=(lb, ub),
         method='trf',
-        max_nfev=200,
+        max_nfev=500,
+        ftol=1e-12,
+        xtol=1e-12,
+        gtol=1e-12,
         verbose=0,
     )
     
-    return result.x
+    # Force exact zeros for base x,y and orientation
+    q_final = result.x.copy()
+    q_final[0] = 0.0  # x
+    q_final[1] = 0.0  # y
+    q_final[3:6] = 0.0  # orientation
+    
+    return q_final
 
 def printEEPositions(model, data):
     ee_names = ["FL_EE", "FR_EE", "RL_EE", "RR_EE"]

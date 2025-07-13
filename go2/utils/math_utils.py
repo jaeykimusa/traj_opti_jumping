@@ -97,3 +97,9 @@ def convert_3Drot_to_quat(q_partial):
         raise TypeError(f"Unsupported type for q_partial: {type(q_partial)}")
 
     return q_full
+
+# def abs(x):
+#     x = ca.MX.sym("x")
+#     abs_x = ca.fabs(x)
+#     fn = ca.Function("fn", [x], [abs_x])
+#     return fn(x)

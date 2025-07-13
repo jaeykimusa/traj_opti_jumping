@@ -3,6 +3,9 @@
 from enum import IntEnum, Enum, auto
 # from robot import *
 
+MU = 0.8
+INFINITY = float('inf')
+
 class Frame(IntEnum):
     UNIVERSE = 0        # type FIXED_JOINT
     ROOT_JOINT = 1      # type JOINT

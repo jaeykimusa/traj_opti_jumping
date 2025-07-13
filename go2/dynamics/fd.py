@@ -1,134 +1,98 @@
 # fd.py
 
-import numpy as np
-import casadi as ca
 from go2.robot.robot import *
-import pinocchio as pin
-from go2.dynamics.dynamics import *
+from go2.robot.morphology import *
+from go2.dynamics.fd import *
 from go2.utils.math_utils import *
 
+def computeFullContactJacobians(q):
+    if isinstance(q, ca.SX):
+        Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, Frame.FR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, Frame.RL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        Jc_RR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, Frame.RR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        full_Jc = ca.vertcat(Jc_FL, Jc_FR, Jc_RL, Jc_RR)
+        Jc = full_Jc
+    elif isinstance(q, ca.MX):
+        cs_q = ca.SX.sym("q", NUM_Q, 1)
+        cs_Jc = ca.SX.sym("Jc", NUM_U, NUM_Q)
+        cs_Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        cs_Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.FR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        cs_Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.RL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        cs_Jc_RR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.RR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        cs_Jc = ca.vertcat(cs_Jc_FL, cs_Jc_FR, cs_Jc_RL, cs_Jc_RR)
+        cs_full_Jc_fn = ca.Function("cs_full_Jc_fn", [cs_q], [cs_Jc])
+        Jc = cs_full_Jc_fn(q)
+    else:
+        pin.computeJointJacobians(model, data, q)
+        pin.framesForwardKinematics(model, data, q)
+        J_list = []
+        for frameId in EE_FRAME_IDS:
+            J = pin.getFrameJacobian(model, data, frameId, pin.LOCAL_WORLD_ALIGNED)
+            J_list.append(J[:3, :])
+        Jc = np.vstack(J_list)
+    return Jc
 
-# symbolic
-from pinocchio.casadi import crba, rnea#, computeJointPlacement, computeFramePlacements
+def fd(q, v, tau_actuator, f):
+    if isinstance(q, (ca.SX, ca.MX)):  # CasADi symbolic mode
+        # Create symbolic variables
+        cs_q = ca.SX.sym("q", NUM_Q, 1)
+        cs_v = ca.SX.sym("qd", NUM_Q, 1)
+        cs_tau_actuator = ca.SX.sym("tau", NUM_Q, 1)  # Fixed variable name
+        cs_f = ca.SX.sym("f", NUM_F, 1)
+        
+        # Compute contact Jacobian symbolically
+        cs_Jc = computeFullContactJacobians(cs_q)
+        
+        # Compute total generalized forces
+        cs_tau_generalized = cs_tau_actuator + cs_Jc.T @ cs_f
+        
+        # Compute acceleration using ABA
+        pinocchio.casadi.aba(ad_model, ad_data, cs_q, cs_v, cs_tau_generalized)
+        a_ad = ad_data.ddq
+        
+        # Create function with correct inputs
+        cs_aba_fn = ca.Function("create_aba_fn", [cs_q, cs_v, cs_tau_actuator, cs_f], [a_ad])
+        
+        # Evaluate at given values
+        ddq = cs_aba_fn(q, v, tau_actuator, f)
+       
+    else: 
+        Jc = computeFullContactJacobians(q)
+        tau_generalized = tau_actuator + Jc.T @ f        
+        pin.aba(model, data, q, v, tau_generalized)
+        ddq = data.ddq
 
-# def fd(q, qd, qdd=None, u=None, f=None):
-#     if qdd is None:
-#         qdd = ca.SX.zeros(NUM_Q)
+    return ddq
+
+# Define computeGravity function that works with both symbolic and numerical inputs
+def computeGravity(q):
+    """
+    Compute generalized gravity vector for the robot.
+    Works with both CasADi symbolic and numerical inputs.
     
-#     # # mass matrix
-#     # M = pin.crba(model_casadi, data_casadi, convert_3Drot_to_quat(q)) 
-#     # # nonLinearTerms 
-#     # b = pin.rnea(model_casadi, data_casadi, q, qd, qdd)
-
-#     q_sx = ca.SX.sym("q", NUM_Q)
-#     qd_sx = ca.SX.sym("qd", NUM_Q)
-#     qdd_sx = ca.SX.sym("qdd", NUM_Q)
-#     M_fun = ca.Function("M_fun", [q_sx], [pin.crba(model_casadi, data_casadi, q_sx)])
-#     b_fun = ca.Function("b_fun", [q_sx, qd_sx, qdd_sx], [pin.rnea(model_casadi, data_casadi, q_sx, qd_sx, qdd_sx)])
-#     q_full = convert_3Drot_to_quat(q)
-#     M = M_fun(q_full)
-#     b = b_fun(q_full, qd, qdd)
-
-#     # actuator selection mattrix B
-#     B = ca.MX.zeros(NUM_Q, NUM_U)
-#     B[6:, :] = ca.MX.eye(NUM_U)
-
-#     # contact
-#     Jc_FL = pin.computeFrameJacobian(model_casadi, data_casadi, q, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)
-#     Jc_FR = pin.computeFrameJacobian(model_casadi, data_casadi, q, Frame.FR_EE, pin.LOCAL_WORLD_ALIGNED)
-#     Jc_RL = pin.computeFrameJacobian(model_casadi, data_casadi, q, Frame.RL_EE, pin.LOCAL_WORLD_ALIGNED)
-#     Jc_RR = pin.computeFrameJacobian(model_casadi, data_casadi, q, Frame.RR_EE, pin.LOCAL_WORLD_ALIGNED)
-#     Jc_FL = Jc_FL[:3, :]
-#     Jc_FR = Jc_FL[:3, :]
-#     Jc_RL = Jc_FL[:3, :]
-#     Jc_RR = Jc_FL[:3, :]
-#     Jc = np.vstack([Jc_FL, Jc_FR, Jc_RL, Jc_RR])
-
-#     # solution to the eom when the qdd is zero
-#     u0 = B @ u + Jc.T @ f - b
-#     qdd = ca.solve(M, u0)
-
-#     return qdd
-
-#     # # s = symbolic
-#     # fds = ca.Function("fd",
-#     #                     [q, qd, u, f],
-#     #                     [qdd],
-#     #                     ["q", "qd", "u", "f"],
-#     #                     ["qdd"])
-#     # qdd_i = fds(q, qd, u, f)
-#     # return qdd_i
-
-
-# def build_fd_function():
-#     q = ca.SX.sym("q", NUM_Q)
-#     qd = ca.SX.sym("qd", NUM_Q)
-#     u = ca.SX.sym("u", NUM_U)
-#     f = ca.SX.sym("f", NUM_F)
-
-#     q_full = convert_3Drot_to_quat(q)
-
-#     M = pin.crba(model_casadi, data_casadi, q_full)
-#     b = pin.rnea(model_casadi, data_casadi, q_full, qd, ca.SX.zeros(NUM_Q))
-
-#     B = ca.SX.zeros(NUM_Q, NUM_U)
-#     B[6:, :] = ca.SX.eye(NUM_U)
-
-#     pin.computeJointPlacement(model_casadi, data_casadi, q_full)
-#     pin.computeFramePlacements(model_casadi, data_casadi)
-
-#     Jc_FL = pin.computeFrameJacobian(model_casadi, data_casadi, q_full, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-#     Jc_FR = pin.computeFrameJacobian(model_casadi, data_casadi, q_full, Frame.FR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-#     Jc_RL = pin.computeFrameJacobian(model_casadi, data_casadi, q_full, Frame.RL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-#     Jc_RR = pin.computeFrameJacobian(model_casadi, data_casadi, q_full, Frame.RR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-#     Jc = ca.vertcat(Jc_FL, Jc_FR, Jc_RL, Jc_RR)
-
-#     tau = B @ u + Jc.T @ f - b
-#     qdd = ca.solve(M, tau)
-
-#     return ca.Function("fd_fun", [q, qd, u, f], [qdd])
-
-def fd(q, qd, qdd=None, u=None, f=None):
-    if qdd is None:
-        qdd = np.zeros(NUM_Q)
-
-    # Convert quaternion
-    q_full = convert_3Drot_to_quat(q)  # returns np.array
-
-    # --- Compute M(q) and b(q, qd, qdd) as NumPy ---
-    M_np = pin.crba(model, data, q_full)
-    b_np = pin.rnea(model, data, q_full, qd, qdd)
-
-    # --- Convert to symbolic MX for downstream math ---
-    M = ca.MX(M_np)
-    b = ca.MX(b_np)
-
-    # Actuation matrix B
-    B = ca.MX.zeros(NUM_Q, NUM_U)
-    B[6:, :] = ca.MX.eye(NUM_U)
-
-    # Contact Jacobians using symbolic model
-    q_sym = ca.MX(q_full)
-    # computeJointPlacement(data_casadi, q_sym)
-    # computeFramePlacements(data_casadi)
-
-    pin.computeJointPlacement(model_casadi, data_casadi, q_sym)
-    pin.computeFramePlacements(model_casadi, data_casadi)
-
-    
-    Jc_FL = pin.computeFrameJacobian(model_casadi, data_casadi, q_sym, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-    Jc_FR = pin.computeFrameJacobian(model_casadi, data_casadi, q_sym, Frame.FR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-    Jc_RL = pin.computeFrameJacobian(model_casadi, data_casadi, q_sym, Frame.RL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-    Jc_RR = pin.computeFrameJacobian(model_casadi, data_casadi, q_sym, Frame.RR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-
-    Jc = ca.vertcat(Jc_FL, Jc_FR, Jc_RL, Jc_RR)
-
-    # Dynamics equation
-    tau = B @ u + Jc.T @ f - b
-    qdd_out = ca.solve(M, tau)
-
-    return qdd_out 
-
-
-
-
+    Args:
+        q: Configuration vector (18x1) - can be numerical or CasADi symbolic
+        
+    Returns:
+        g: Generalized gravity vector (18x1)
+    """
+    if isinstance(q, (ca.SX, ca.MX)):  # CasADi symbolic mode
+        # Create symbolic variable for configuration
+        cs_q = ca.SX.sym("q", NUM_Q, 1)
+        
+        # Compute gravity using Pinocchio's CasADi interface
+        pinocchio.casadi.computeGeneralizedGravity(ad_model, ad_data, cs_q)
+        g_ad = ad_data.g
+        
+        # Create CasADi function
+        cs_gravity_fn = ca.Function("compute_gravity_fn", [cs_q], [g_ad])
+        
+        # Evaluate at the given configuration
+        g = cs_gravity_fn(q)
+        
+    else:  # Numerical mode
+        # Compute gravity using standard Pinocchio
+        g = pin.computeGeneralizedGravity(model, data, q)
+        
+    return g

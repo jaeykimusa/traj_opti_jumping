@@ -7,19 +7,19 @@ from go2.utils.math_utils import *
 
 def computeFullContactJacobians(q):
     if isinstance(q, ca.SX):
-        Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-        Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, Frame.FR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-        Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, Frame.RL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-        Jc_RR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, Frame.RR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, 26, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, 58, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, 34, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        Jc_RR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, 66, pin.LOCAL_WORLD_ALIGNED)[:3, :]
         full_Jc = ca.vertcat(Jc_FL, Jc_FR, Jc_RL, Jc_RR)
         Jc = full_Jc
     elif isinstance(q, ca.MX):
         cs_q = ca.SX.sym("q", NUM_Q, 1)
         cs_Jc = ca.SX.sym("Jc", NUM_U, NUM_Q)
-        cs_Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.FL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-        cs_Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.FR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-        cs_Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.RL_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
-        cs_Jc_RR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, Frame.RR_EE, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        cs_Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, 26, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        cs_Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, 58, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        cs_Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, 34, pin.LOCAL_WORLD_ALIGNED)[:3, :]
+        cs_Jc_RR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, 66, pin.LOCAL_WORLD_ALIGNED)[:3, :]
         cs_Jc = ca.vertcat(cs_Jc_FL, cs_Jc_FR, cs_Jc_RL, cs_Jc_RR)
         cs_full_Jc_fn = ca.Function("cs_full_Jc_fn", [cs_q], [cs_Jc])
         Jc = cs_full_Jc_fn(q)

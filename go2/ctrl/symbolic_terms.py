@@ -20,7 +20,6 @@ f = computeStandingContactForces(q)
 u = id(q, qd, qdd, f)
 
 x_d = fk(q)
-
 opti = ca.Opti()
 
 # Decision variables

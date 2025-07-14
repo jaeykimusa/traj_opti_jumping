@@ -32,17 +32,17 @@ u_opt = opt.variable(NUM_Q, N)
 f_opt = opt.variable(NUM_F, N)
 
 # desired parameters
-q_d = opt.parameter(NUM_Q, N)
-qd_d = opt.parameter(NUM_Q, N)
-# qdd_d = opt.parameter(NUM_Q, N)
-# u_d = opt.parameter(NUM_Q, N)
-f_d = opt.parameter(NUM_F, N)
+# q_d = opt.parameter(NUM_Q, N)
+# qd_d = opt.parameter(NUM_Q, N)
+# # qdd_d = opt.parameter(NUM_Q, N)
+# # u_d = opt.parameter(NUM_Q, N)
+# f_d = opt.parameter(NUM_F, N)
 
 costFunction = 0
 ZERO_WEIGHT = 0.0
 Q_BASE_POSITION_WEIGHT = 10
 Q_BASE_ORIENTATION_WEIGHT = 5
-Q_JOINT_WEIGHT = 1
+Q_JOINT_WEIGHT = 5
 QD_BASE_POSITION_WEIGHT = 10
 QD_BASE_ORIENTATION_WEIGHT = 5
 QD_JOINT_WEIGHT = 1
@@ -67,27 +67,39 @@ LANDING_PHASE_0 = 0.75 * N
 LANDING_PHASE_1 = N
 
 # constraints
-FZ_MAX = INFINITY
+FZ_MAX = 500 #INFINITY
 TAU_MAX = 45 # Nm
-JOINT_LOWER = np.array([-0.7, -1.5, -1.5] * 4)
-JOINT_UPPER = np.array([0.7, 1.5, 1.5] * 4)
+JOINT_LOWER = np.array([-0.5, -1.5, -1.5] * 4)
+JOINT_UPPER = np.array([0.5, 1.5, 1.5] * 4)
 
 # initial guess
-q_initial = q_ref[:,0]
-qd_initial = qd_ref[:,0]
-f_initial = f_ref[:,0]
+q_initial = getDefaultStandStateFullOptimization(model, data)
+qd_initial = np.zeros(18)
 qdd_initial = np.zeros(18)
+f_initial = computeStandingContactForces(q_initial)
 u_initial = id(q_initial, qd_initial, qdd_initial, f_initial) # TODO: need more accurate initial guess for u and qdd
 qdd_initial = fd(q_initial, qd_initial, u_initial, f_initial)
 
+q_final = getDefaultStandStateFullOptimizationFinal(model, data)
+qd_final = np.zeros(18)
+qdd_final = np.zeros(18)
+
+opt.subject_to(q_opt[:,0] == q_initial)
+opt.subject_to(qd_opt[:,0] == qd_initial)
+# opt.subject_to(qdd_opt[:,0] == qdd_initial)
+# opt.subject_to(f_opt[:,0] == f_initial)
+opt.subject_to(u_opt[:,0] == u_initial)
+# opt.subject_to(q_opt[:,-1] == q_final)
+# opt.subject_to(qd_opt[:,-1] == qd_final)
+# opt.subject_to(qdd_opt[:,-1] == qdd_final)
 
 for k in range(N):
     opt.subject_to(qdd_opt[:,k] == fd(q_opt[:,k], qd_opt[:,k], u_opt[:,k], f_opt[:,k]))
 
     # TODO: rk4 integration would be bette?
-    # if k < N-1:
-    #     opt.subject_to(q_opt[:,k+1] == q_opt[:,k] + qd_opt[:,k]*TIMESTEP + 0.5*TIMESTEP**2*qdd_opt[:,k])
-    #     opt.subject_to(qd_opt[:,k+1] == qd_opt[:,k] + qdd_opt[:,k]*TIMESTEP)
+    if k < N-1:
+        opt.subject_to(q_opt[:,k+1] == q_opt[:,k] + qd_opt[:,k]*TIMESTEP)
+        opt.subject_to(qd_opt[:,k+1] == qd_opt[:,k] + qdd_opt[:,k]*TIMESTEP)
     
     # stance phase
     if STANCE_PHASE_0 <= k < STANCE_PHASE_1:
@@ -119,26 +131,26 @@ for k in range(N):
         opt.subject_to(fx4 >= -MU * fz4)
         opt.subject_to(fy4 <= MU * fz4)
         opt.subject_to(fy4 >= -MU * fz4)
-        # kinematics
-        x_k = fk(q_d[:,k])
-        opt.subject_to(x_k == fk(q_opt[:,k]))
+
+        fk_result = fk(q_opt[:,k])
+        feet_positions = fk_result[3:]
+        initial_feet = np.array([0.1934, 0.142, 0, 0.1934, -0.142, 0, -0.1934, 0.142, 0, -0.1934, -0.142, 0])
+        
+        # Soft constraint on foot positions
+        for i in range(12):  # 4 feet × 3 coordinates
+            opt.subject_to(feet_positions[i] >= initial_feet[i] - 0.05)
+            opt.subject_to(feet_positions[i] <= initial_feet[i] + 0.05)
     
-    if TAKE_OFF_PHASE_0 <= k < TAKE_OFF_PHASE_1:
+    elif TAKE_OFF_PHASE_0 <= k < TAKE_OFF_PHASE_1:
         fx1, fy1, fz1 = f_opt[0,k], f_opt[1,k], f_opt[2,k]
         fx2, fy2, fz2 = f_opt[3,k], f_opt[4,k], f_opt[5,k]
         fx3, fy3, fz3 = f_opt[6,k], f_opt[7,k], f_opt[8,k]
         fx4, fy4, fz4 = f_opt[9,k], f_opt[10,k], f_opt[11,k]
         opt.subject_to(fz1 == 0)
-        opt.subject_to(fz1 == 0)
-        opt.subject_to(fx1 == 0)
         opt.subject_to(fx1 == 0)
         opt.subject_to(fy1 == 0)
-        opt.subject_to(fy1 == 0)
-        opt.subject_to(fz2 == 0)
         opt.subject_to(fz2 == 0)
         opt.subject_to(fx2 == 0)
-        opt.subject_to(fx2 == 0)
-        opt.subject_to(fy2 == 0)
         opt.subject_to(fy2 == 0)
         opt.subject_to(fz3 >= 0)
         opt.subject_to(fz3 <= FZ_MAX)
@@ -153,13 +165,17 @@ for k in range(N):
         opt.subject_to(fy4 <= MU * fz4)
         opt.subject_to(fy4 >= -MU * fz4)
         # kinematics
-        x_k = fk(q_d[:,k])[9:]
-        opt.subject_to(x_k == fk(q_opt[:,k])[9:])
+        fk_result = fk(q_opt[:,k])
+        rear_feet = fk_result[9:]  # RL and RR feet (6 elements)
+        target_rear = np.array([0.1934, -0.142, 0, -0.1934, -0.142, 0])
+        for i in range(6):
+            opt.subject_to(rear_feet[i] >= target_rear[i] - 0.05)
+            opt.subject_to(rear_feet[i] <= target_rear[i] + 0.05)
 
-    if FLIGHT_PHASE_0 <= k < FLIGHT_PHASE_1:
+    elif FLIGHT_PHASE_0 <= k < FLIGHT_PHASE_1:
         opt.subject_to(f_opt[:,k] == 0)
 
-    if LANDING_PHASE_0 <= k < LANDING_PHASE_1:
+    elif LANDING_PHASE_0 <= k < LANDING_PHASE_1:
         fx1, fy1, fz1 = f_opt[0,k], f_opt[1,k], f_opt[2,k]
         fx2, fy2, fz2 = f_opt[3,k], f_opt[4,k], f_opt[5,k]
         fx3, fy3, fz3 = f_opt[6,k], f_opt[7,k], f_opt[8,k]
@@ -189,8 +205,33 @@ for k in range(N):
         opt.subject_to(fy4 <= MU * fz4)
         opt.subject_to(fy4 >= -MU * fz4)
         # kinematics
-        x_k = fk(q_d[:,k])
-        opt.subject_to(x_k == fk(q_opt[:,k]))
+        fk_result = fk(q_opt[:,k])
+        
+        # Body should be at (2m, 0, height)
+        # body_pos = fk_result[:3]
+        # target_body_x = 2.0
+        # target_body_y = 0.0
+        # target_body_z = 0.3  # Landing height
+        
+        # opt.subject_to(body_pos[0] >= target_body_x - 0.2)  # Allow some tolerance
+        # opt.subject_to(body_pos[0] <= target_body_x + 0.2)
+        # opt.subject_to(body_pos[1] >= target_body_y - 0.1)
+        # opt.subject_to(body_pos[1] <= target_body_y + 0.1)
+        # opt.subject_to(body_pos[2] >= target_body_z - 0.1)
+        # opt.subject_to(body_pos[2] <= target_body_z + 0.1)
+        
+        # Feet should be at appropriate landing positions
+        feet_pos = fk_result[3:]
+        target_feet = np.array([
+            2.0 + 0.1934, 0.142, 0,    # FL
+            2.0 - 0.1934, 0.142, 0,    # FR  
+            2.0 + 0.1934, -0.142, 0,   # RL
+            2.0 - 0.1934, -0.142, 0    # RR
+        ])
+        
+        for i in range(12):
+            opt.subject_to(feet_pos[i] >= target_feet[i] - 0.1)
+            opt.subject_to(feet_pos[i] <= target_feet[i] + 0.1)
     
     # actuation and joint limits
     opt.subject_to(u_opt[6:18, k] <= TAU_MAX)
@@ -199,31 +240,33 @@ for k in range(N):
     opt.subject_to(q_opt[6:18, k] >= JOINT_LOWER.reshape(-1, 1))
 
     # cost accumulation
-    costFunction += (q_opt[:,k] - q_d[:,k]).T @ Q_COST_WEIGHT @ (q_opt[:,k] - q_d[:,k])
-    costFunction += (qd_opt[:,k] - qd_d[:,k]).T @ QD_COST_WEIGHT @ (qd_opt[:,k] - qd_d[:,k])
+    costFunction += q_opt[:,k].T @ Q_COST_WEIGHT @ q_opt[:,k]
+    costFunction += qd_opt[:,k].T @ QD_COST_WEIGHT @ qd_opt[:,k]
     costFunction += qdd_opt[:,k].T @ QDD_COST_WEIGHT @ qdd_opt[:,k]
     costFunction += u_opt[:,k].T @ U_COST_WEIGHT @ u_opt[:,k]
-    costFunction += (f_opt[:,k] - f_d[:,k]).T @ F_COST_WEIGHT @ (f_opt[:,k] - f_d[:,k])
+    costFunction += f_opt[:,k].T @ F_COST_WEIGHT @ f_opt[:,k]
+
+    opt.subject_to(u_opt[:6, k] == 0)
 
 opt.set_initial(q_opt[:,0], q_initial)
 opt.set_initial(qd_opt[:,0], qd_initial)
-opt.set_initial(qdd_opt[:,0], qd_initial)
+opt.set_initial(qdd_opt[:,0], qdd_initial)
+
 opt.set_initial(u_opt[:,0], u_initial)
 opt.set_initial(f_opt[:,0], f_initial)
 
-opt.set_value(q_d, q_ref)
-opt.set_value(qd_d, qd_ref)
+# opt.set_value(q_d, q_ref)
+# opt.set_value(qd_d, qd_ref)
 # opt.set_value(qdd_d, qdd.reshape(-1, 1))
 # opt.set_value(u_d, u.reshape(-1, 1))
-opt.set_value(f_d, f_ref)
+# opt.set_value(f_d, f_ref)
 
 opt.minimize(costFunction)
 
-opt.solver("ipopt", {"expand": False}, {"max_iter": 1000})
-
+opt.solver("ipopt", {"expand": False}, {"max_iter": 3000})
+start = time.time()
 try:
     print("FULL-BODY TRAJECTORY OPTIMIZATION")
-    start = time.time()
     print("OPTIMIZING...")
     sol = opt.solve()
     end = time.time()
@@ -244,12 +287,63 @@ try:
     printSize(F_OPT)
 
 except RuntimeError as e:
+    end = time.time()
     print(f"\n=== OPTIMIZATION FAILED ===")
+    print(f"Optimization solve time: {end - start:.2f} seconds")
     print(f"Error: {e}")
+    
+    # Debug information
+    print("\nDebugging Values:")
+    q_debug = opt.debug.value(q_opt)
+    qd_debug = opt.debug.value(qd_opt)
+    qdd_debug = opt.debug.value(qdd_opt)
+    u_debug = opt.debug.value(u_opt)
+    f_debug = opt.debug.value(f_opt)
+    
+    fig, axs = plt.subplots(3, 3, figsize=(15, 8))  # Wider layout
+    axs = axs.flatten()
+    # Second subplot: q comparison
+    axs[0].plot(q_debug, label="q_debug")
+    # axs[0].plot(q_opt, label="q_desired")
+    axs[0].set_title("q comparison")
+    axs[0].legend()
+    # Third subplot: v comparison
+    axs[1].plot(qd_debug, label="qd_debug")
+    # axs[1].plot(qd_opt, label="qd_desired")
+    axs[1].set_title("qd comparison")
+    axs[1].legend()
+    # First subplot: qdd comparison
+    axs[2].plot(qdd_debug, label="qdd_debug")
+    # axs[2].plot(qdd_opt, label="qdd_desired")
+    axs[2].set_title("qdd comparison")
+    axs[2].legend()
+    # Fourth subplot: tau comparison
+    axs[3].plot(u_debug, label="u_debug")
+    # axs[3].plot(u_opt, label="u_desired")
+    axs[3].set_title("u comparison")
+    axs[3].legend()
 
+    # Fifth subplot: f comparison
+    axs[4].plot(f_debug, label="f_debug")
+    # axs[4].plot(f_opt, label="f_desired")
+    axs[4].set_title("f comparison")
+    axs[4].legend()
 
+    # Jc_F_debug= computeFullContactJacobians(q_debug).T @ f_debug
+    # Jc_F_desired = computeFullContactJacobians(q_opt).T @ f_opt
+    # # 6 subplot: Jc comparison
+    # axs[5].plot(Jc_F_debug, label="Jc_F_debug")
+    # axs[5].plot(Jc_F_desired, label="Jc_F_desired")
+    # axs[5].set_title("Jc*F comparison")
+    # axs[5].legend()
 
+    # Optional: label axes, add spacing
+    for i in range(5):
+        axs[i].set_xlabel("state")
+        axs[i].set_ylabel("value")
 
+    plt.tight_layout()
+    plt.show()
 
 
 

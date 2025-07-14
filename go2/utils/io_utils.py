@@ -62,26 +62,43 @@ def readReferenceData(fileNameQ, fileNameQD, fileNameF, basePath=None):
 
     if (getRowSize(qd_ref) == 3 and getRowSize(f_ref) == 8):
         qd_ref_new = getZerosMatrix(NUM_Q, getColumnSize(q_ref))
-        f_ref_new = getZerosMatrix(NUM_F, getColumnSize(q_ref))
+        f_ref_new = getZerosMatrix(NUM_F, getColumnSize(f_ref) + 1)
         qd_ref_new[0, :] = qd_ref[0, :] # x
         qd_ref_new[2, :] = qd_ref[1, :] # z
         qd_ref_new[4, :] = qd_ref[2, :] # ry
-        qd_ref_new[7, :] = f_ref[4, :] # FL2
-        qd_ref_new[8, :] = f_ref[5, :] # FL3
-        qd_ref_new[10, :] = f_ref[4, :] # FR2
-        qd_ref_new[11, :] = f_ref[5, :] # FR3
-        qd_ref_new[13, :] = f_ref[6, :] # RL2
-        qd_ref_new[14, :] = f_ref[7, :] # RL3
-        qd_ref_new[16, :] = f_ref[6, :] # RR2
-        qd_ref_new[17, :] = f_ref[7, :] # RR3
-        f_ref_new[0, :] = f_ref[0, :] # FL_X
-        f_ref_new[2, :] = f_ref[1, :] # FL_Z
-        f_ref_new[3, :] = f_ref[0, :] # FR_X
-        f_ref_new[5, :] = f_ref[1, :] # FR_Z
-        f_ref_new[6, :] = f_ref[2, :] # RL_X
-        f_ref_new[8, :] = f_ref[3, :] # RL_Z
-        f_ref_new[9, :] = f_ref[2, :] # RR_X
-        f_ref_new[11, :] = f_ref[3, :] # RR_Z
+        # qd_ref_new[7, :] = f_ref[4, :] + f_ref[4, -1] / 0.2 # FL2
+        # qd_ref_new[8, :] = f_ref[5, :] + f_ref[5, -1] / 0.2 # FL3
+        # qd_ref_new[10, :] = f_ref[4, :] + f_ref[4, -1] / 0.2 # FR2
+        # qd_ref_new[11, :] = f_ref[5, :] + f_ref[5, -1] / 0.2 # FR3
+        # qd_ref_new[13, :] = f_ref[6, :] + f_ref[6, -1] / 0.2 # RL2
+        # qd_ref_new[14, :] = f_ref[7, :] + f_ref[7, -1] / 0.2 # RL3
+        # qd_ref_new[16, :] = f_ref[6, :] + f_ref[6, -1] / 0.2 # RR2
+        # qd_ref_new[17, :] = f_ref[7, :] + f_ref[7, -1] / 0.2 # RR3
+        # f_ref_new[0, :] = f_ref[0, :] + f_ref[0, -1] / 0.2 # FL_X
+        # f_ref_new[2, :] = f_ref[1, :] + f_ref[1, -1] / 0.2 # FL_Z
+        # f_ref_new[3, :] = f_ref[0, :] + f_ref[0, -1] / 0.2 # FR_X
+        # f_ref_new[5, :] = f_ref[1, :] + f_ref[1, -1] / 0.2 # FR_Z
+        # f_ref_new[6, :] = f_ref[2, :] + f_ref[2, -1] / 0.2 # RL_X
+        # f_ref_new[8, :] = f_ref[3, :] + f_ref[3, -1] / 0.2 # RL_Z
+        # f_ref_new[9, :] = f_ref[2, :] + f_ref[2, -1] / 0.2 # RR_X
+        # f_ref_new[11, :] = f_ref[3, :] + f_ref[3, -1] / 0.2 # RR_Z
+
+        qd_ref_new[7, :] = np.hstack([f_ref[4, :], f_ref[4, -1]]) #/ 0.2]) # FL2
+        qd_ref_new[8, :] = np.hstack([f_ref[5, :], f_ref[5, -1]]) # FL3
+        qd_ref_new[10, :] = np.hstack([f_ref[4, :], f_ref[4, -1]]) # FR2
+        qd_ref_new[11, :] = np.hstack([f_ref[5, :], f_ref[5, -1]]) # FR3
+        qd_ref_new[13, :] = np.hstack([f_ref[6, :], f_ref[6, -1]]) # RL2
+        qd_ref_new[14, :] = np.hstack([f_ref[7, :], f_ref[7, -1]]) # RL3
+        qd_ref_new[16, :] = np.hstack([f_ref[6, :], f_ref[6, -1]]) # RR2
+        qd_ref_new[17, :] = np.hstack([f_ref[7, :], f_ref[7, -1]]) # RR3
+        f_ref_new[0, :] = np.hstack([f_ref[0, :], f_ref[0, -1]]) # FL_X
+        f_ref_new[2, :] = np.hstack([f_ref[1, :], f_ref[1, -1]]) # FL_Z
+        f_ref_new[3, :] = np.hstack([f_ref[0, :], f_ref[0, -1]]) # FR_X
+        f_ref_new[5, :] = np.hstack([f_ref[1, :], f_ref[1, -1]]) # FR_Z
+        f_ref_new[6, :] = np.hstack([f_ref[2, :], f_ref[2, -1]]) # RL_X
+        f_ref_new[8, :] = np.hstack([f_ref[3, :], f_ref[3, -1]]) # RL_Z
+        f_ref_new[9, :] = np.hstack([f_ref[2, :], f_ref[2, -1]]) # RR_X
+        f_ref_new[11, :] = np.hstack([f_ref[3, :], f_ref[3, -1]]) # RR_Z
 
     return q_ref_new, qd_ref_new, f_ref_new
 

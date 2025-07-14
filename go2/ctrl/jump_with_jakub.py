@@ -15,13 +15,20 @@ from go2.utils.io_utils import *
 
 import matplotlib.pyplot as plt
 import time
-
-q_ref, qd_ref, f_ref = readReferenceData("q_ref_2m_jump.txt", "v_ref_2m_jump.txt", "f_ref_2m_jump.txt", "./go2/ctrl/data/forward_jump_2m/")
+q_ref = np.array([
+    -0.0,  0,  0.33, 0,0,0,
+    0,0.806, -1.802,
+    0,0.806, -1.802,
+    0,0.806, -1.802,
+    0,0.806, -1.802,
+])
+qd_ref = np.zeros_like(q_ref)
+f_ref = np.zeros(12)
 
 opt = ca.Opti()
 
-N = 100
-TIMESTEP = 0.02 # seconds
+N  = 50
+TIMESTEP = 0.05 # seconds
 TOTAL_TIME = N * TIMESTEP # 2 seconds
 
 # decision variables
@@ -31,18 +38,11 @@ qdd_opt = opt.variable(NUM_Q, N)
 u_opt = opt.variable(NUM_Q, N)
 f_opt = opt.variable(NUM_F, N)
 
-# desired parameters
-q_d = opt.parameter(NUM_Q, N)
-qd_d = opt.parameter(NUM_Q, N)
-# qdd_d = opt.parameter(NUM_Q, N)
-# u_d = opt.parameter(NUM_Q, N)
-f_d = opt.parameter(NUM_F, N)
-
 costFunction = 0
 ZERO_WEIGHT = 0.0
-Q_BASE_POSITION_WEIGHT = 10
-Q_BASE_ORIENTATION_WEIGHT = 5
-Q_JOINT_WEIGHT = 1
+Q_BASE_POSITION_WEIGHT = 0.01
+Q_BASE_ORIENTATION_WEIGHT = 10
+Q_JOINT_WEIGHT = 10
 QD_BASE_POSITION_WEIGHT = 10
 QD_BASE_ORIENTATION_WEIGHT = 5
 QD_JOINT_WEIGHT = 1
@@ -57,14 +57,22 @@ QDD_COST_WEIGHT = np.diag([QDD_BASE_POSITION_WEIGHT]*3 + [QDD_BASE_ORIENTATION_W
 U_COST_WEIGHT = np.diag([ZERO_WEIGHT]*6 + [U_TAU_WEIGHT]*12)
 F_COST_WEIGHT = np.diag([0.001]*12)
 
-STANCE_PHASE_0 = 0
-STANCE_PHASE_1 = 0.3 * N
-TAKE_OFF_PHASE_0 = 0.3 * N
-TAKE_OFF_PHASE_1 = 0.45 * N
-FLIGHT_PHASE_0 = 0.45 * N
-FLIGHT_PHASE_1 = 0.75 * N
-LANDING_PHASE_0 = 0.75 * N
-LANDING_PHASE_1 = N
+
+debug = False
+if debug:
+    STANCE_PHASE_0 = 0
+    STANCE_PHASE_1 = N
+    FLIGHT_PHASE_0 = N
+    FLIGHT_PHASE_1 = N
+    LANDING_PHASE_0 = N
+    LANDING_PHASE_1 = N
+else:
+    STANCE_PHASE_0 = 0
+    STANCE_PHASE_1 = 0.3 * N
+    FLIGHT_PHASE_0 = 0.3 * N
+    FLIGHT_PHASE_1 = 0.6 * N
+    LANDING_PHASE_0 = 0.6 * N
+    LANDING_PHASE_1 = N
 
 # constraints
 FZ_MAX = INFINITY
@@ -73,22 +81,37 @@ JOINT_LOWER = np.array([-0.7, -1.5, -1.5] * 4)
 JOINT_UPPER = np.array([0.7, 1.5, 1.5] * 4)
 
 # initial guess
-q_initial = q_ref[:,0]
-qd_initial = qd_ref[:,0]
-f_initial = f_ref[:,0]
+q_initial = q_ref
+qd_initial = qd_ref
+f_initial = f_ref
+u_initial = np.zeros(18)
 qdd_initial = np.zeros(18)
-u_initial = id(q_initial, qd_initial, qdd_initial, f_initial) # TODO: need more accurate initial guess for u and qdd
-qdd_initial = fd(q_initial, qd_initial, u_initial, f_initial)
+# u_initial = id(q_initial, qd_initial, qdd_initial, f_initial) # TODO: need more accurate initial guess for u and qdd
+# qdd_initial = fd(q_initial, qd_initial, u_initial, f_initial)
 
+def split_fk(fkvec):
+    fkvec = fkvec.reshape((-1, 1))
+    com_position = fkvec[0:3]
+    lf_position = fkvec[3:6]
+    rf_position = fkvec[6:9]
+    lh_position = fkvec[9:12]
+    rh_position = fkvec[12:15]
+    return com_position, lf_position, rf_position, lh_position, rh_position
 
 for k in range(N):
     opt.subject_to(qdd_opt[:,k] == fd(q_opt[:,k], qd_opt[:,k], u_opt[:,k], f_opt[:,k]))
+    opt.subject_to(u_opt[:6, k] == 0)
 
-    # TODO: rk4 integration would be bette?
-    # if k < N-1:
-    #     opt.subject_to(q_opt[:,k+1] == q_opt[:,k] + qd_opt[:,k]*TIMESTEP + 0.5*TIMESTEP**2*qdd_opt[:,k])
-    #     opt.subject_to(qd_opt[:,k+1] == qd_opt[:,k] + qdd_opt[:,k]*TIMESTEP)
-    
+    if k == 0:
+        opt.subject_to(q_opt[:,k] == q_ref)
+
+    if k == N-1:
+        opt.subject_to(q_opt[:,k] == q_ref)
+
+    if k < N-1:
+        opt.subject_to(q_opt[:,k+1] == q_opt[:,k] + qd_opt[:,k]*TIMESTEP)
+        opt.subject_to(qd_opt[:,k+1] == qd_opt[:,k] + qdd_opt[:,k]*TIMESTEP)
+
     # stance phase
     if STANCE_PHASE_0 <= k < STANCE_PHASE_1:
         fx1, fy1, fz1 = f_opt[0,k], f_opt[1,k], f_opt[2,k]
@@ -120,44 +143,26 @@ for k in range(N):
         opt.subject_to(fy4 <= MU * fz4)
         opt.subject_to(fy4 >= -MU * fz4)
         # kinematics
-        x_k = fk(q_d[:,k])
-        opt.subject_to(x_k == fk(q_opt[:,k]))
-    
-    if TAKE_OFF_PHASE_0 <= k < TAKE_OFF_PHASE_1:
-        fx1, fy1, fz1 = f_opt[0,k], f_opt[1,k], f_opt[2,k]
-        fx2, fy2, fz2 = f_opt[3,k], f_opt[4,k], f_opt[5,k]
-        fx3, fy3, fz3 = f_opt[6,k], f_opt[7,k], f_opt[8,k]
-        fx4, fy4, fz4 = f_opt[9,k], f_opt[10,k], f_opt[11,k]
-        opt.subject_to(fz1 == 0)
-        opt.subject_to(fz1 == 0)
-        opt.subject_to(fx1 == 0)
-        opt.subject_to(fx1 == 0)
-        opt.subject_to(fy1 == 0)
-        opt.subject_to(fy1 == 0)
-        opt.subject_to(fz2 == 0)
-        opt.subject_to(fz2 == 0)
-        opt.subject_to(fx2 == 0)
-        opt.subject_to(fx2 == 0)
-        opt.subject_to(fy2 == 0)
-        opt.subject_to(fy2 == 0)
-        opt.subject_to(fz3 >= 0)
-        opt.subject_to(fz3 <= FZ_MAX)
-        opt.subject_to(fx3 <= MU * fz3)
-        opt.subject_to(fx3 >= -MU * fz3)
-        opt.subject_to(fy3 <= MU * fz3)
-        opt.subject_to(fy3 >= -MU * fz3)
-        opt.subject_to(fz4 >= 0)
-        opt.subject_to(fz4 <= FZ_MAX)
-        opt.subject_to(fx4 <= MU * fz4)
-        opt.subject_to(fx4 >= -MU * fz4)
-        opt.subject_to(fy4 <= MU * fz4)
-        opt.subject_to(fy4 >= -MU * fz4)
-        # kinematics
-        x_k = fk(q_d[:,k])[9:]
-        opt.subject_to(x_k == fk(q_opt[:,k])[9:])
+        com_position, lf_position, rf_position, lh_position, rh_position = split_fk(fk(q_initial.copy()))
+        print("Desired lf position: ", lf_position.reshape(-1))
+        print("Desired rf position: ", rf_position.reshape(-1))
+        print("Desired lh position: ", lh_position.reshape(-1))
+        print("Desired rh position: ", rh_position.reshape(-1))
+        print()
+        com_position_opt, lf_position_opt, rf_position_opt, lh_position_opt, rh_position_opt = split_fk(fk(q_opt[:,k]))
+        if k == 0:
+            pass
+            opt.subject_to(com_position == com_position_opt)
+
+        
+        opt.subject_to(lf_position == lf_position_opt)
+        opt.subject_to(rf_position == rf_position_opt)
+        opt.subject_to(lh_position == lh_position_opt)
+        opt.subject_to(rh_position == rh_position_opt)
 
     if FLIGHT_PHASE_0 <= k < FLIGHT_PHASE_1:
         opt.subject_to(f_opt[:,k] == 0)
+        print("HERE")
 
     if LANDING_PHASE_0 <= k < LANDING_PHASE_1:
         fx1, fy1, fz1 = f_opt[0,k], f_opt[1,k], f_opt[2,k]
@@ -189,37 +194,113 @@ for k in range(N):
         opt.subject_to(fy4 <= MU * fz4)
         opt.subject_to(fy4 >= -MU * fz4)
         # kinematics
-        x_k = fk(q_d[:,k])
-        opt.subject_to(x_k == fk(q_opt[:,k]))
+        com_position, lf_position, rf_position, lh_position, rh_position = split_fk(fk(q_initial.copy()))
+        print("Desired lf position: ", lf_position.reshape(-1))
+        print("Desired rf position: ", rf_position.reshape(-1))
+        print("Desired lh position: ", lh_position.reshape(-1))
+        print("Desired rh position: ", rh_position.reshape(-1))
+        print()
+        com_position_opt, lf_position_opt, rf_position_opt, lh_position_opt, rh_position_opt = split_fk(fk(q_opt[:,k]))
+        opt.subject_to(lf_position == lf_position_opt)
+        opt.subject_to(rf_position == rf_position_opt)
+        opt.subject_to(lh_position == lh_position_opt)
+        opt.subject_to(rh_position == rh_position_opt)
+
+        if(k == N-1):
+            opt.subject_to(com_position == com_position_opt)
+
+    # if TAKE_OFF_PHASE_0 <= k < TAKE_OFF_PHASE_1:
+    #     fx1, fy1, fz1 = f_opt[0,k], f_opt[1,k], f_opt[2,k]
+    #     fx2, fy2, fz2 = f_opt[3,k], f_opt[4,k], f_opt[5,k]
+    #     fx3, fy3, fz3 = f_opt[6,k], f_opt[7,k], f_opt[8,k]
+    #     fx4, fy4, fz4 = f_opt[9,k], f_opt[10,k], f_opt[11,k]
+    #     opt.subject_to(fz1 == 0)
+    #     opt.subject_to(fz1 == 0)
+    #     opt.subject_to(fx1 == 0)
+    #     opt.subject_to(fx1 == 0)
+    #     opt.subject_to(fy1 == 0)
+    #     opt.subject_to(fy1 == 0)
+    #     opt.subject_to(fz2 == 0)
+    #     opt.subject_to(fz2 == 0)
+    #     opt.subject_to(fx2 == 0)
+    #     opt.subject_to(fx2 == 0)
+    #     opt.subject_to(fy2 == 0)
+    #     opt.subject_to(fy2 == 0)
+    #     opt.subject_to(fz3 >= 0)
+    #     opt.subject_to(fz3 <= FZ_MAX)
+    #     opt.subject_to(fx3 <= MU * fz3)
+    #     opt.subject_to(fx3 >= -MU * fz3)
+    #     opt.subject_to(fy3 <= MU * fz3)
+    #     opt.subject_to(fy3 >= -MU * fz3)
+    #     opt.subject_to(fz4 >= 0)
+    #     opt.subject_to(fz4 <= FZ_MAX)
+    #     opt.subject_to(fx4 <= MU * fz4)
+    #     opt.subject_to(fx4 >= -MU * fz4)
+    #     opt.subject_to(fy4 <= MU * fz4)
+    #     opt.subject_to(fy4 >= -MU * fz4)
+    #     # kinematics
+    #     x_k = fk(q_d[:,k])[9:]
+    #     opt.subject_to(x_k == fk(q_opt[:,k])[9:])
+
+    # if FLIGHT_PHASE_0 <= k < FLIGHT_PHASE_1:
+    #     opt.subject_to(f_opt[:,k] == 0)
+
+    # if LANDING_PHASE_0 <= k < LANDING_PHASE_1:
+    #     fx1, fy1, fz1 = f_opt[0,k], f_opt[1,k], f_opt[2,k]
+    #     fx2, fy2, fz2 = f_opt[3,k], f_opt[4,k], f_opt[5,k]
+    #     fx3, fy3, fz3 = f_opt[6,k], f_opt[7,k], f_opt[8,k]
+    #     fx4, fy4, fz4 = f_opt[9,k], f_opt[10,k], f_opt[11,k]
+    #     opt.subject_to(fz1 >= 0)
+    #     opt.subject_to(fz1 <= FZ_MAX)
+    #     opt.subject_to(fx1 <= MU * fz1)
+    #     opt.subject_to(fx1 >= -MU * fz1)
+    #     opt.subject_to(fy1 <= MU * fz1)
+    #     opt.subject_to(fy1 >= -MU * fz1)
+    #     opt.subject_to(fz2 >= 0)
+    #     opt.subject_to(fz2 <= FZ_MAX)
+    #     opt.subject_to(fx2 <= MU * fz2)
+    #     opt.subject_to(fx2 >= -MU * fz2)
+    #     opt.subject_to(fy2 <= MU * fz2)
+    #     opt.subject_to(fy2 >= -MU * fz2)
+    #     opt.subject_to(fz3 >= 0)
+    #     opt.subject_to(fz3 <= FZ_MAX)
+    #     opt.subject_to(fx3 <= MU * fz3)
+    #     opt.subject_to(fx3 >= -MU * fz3)
+    #     opt.subject_to(fy3 <= MU * fz3)
+    #     opt.subject_to(fy3 >= -MU * fz3)
+    #     opt.subject_to(fz4 >= 0)
+    #     opt.subject_to(fz4 <= FZ_MAX)
+    #     opt.subject_to(fx4 <= MU * fz4)
+    #     opt.subject_to(fx4 >= -MU * fz4)
+    #     opt.subject_to(fy4 <= MU * fz4)
+    #     opt.subject_to(fy4 >= -MU * fz4)
+    #     # kinematics
+    #     x_k = fk(q_d[:,k])
+    #     opt.subject_to(x_k == fk(q_opt[:,k]))
     
     # actuation and joint limits
-    opt.subject_to(u_opt[6:18, k] <= TAU_MAX)
-    opt.subject_to(u_opt[6:18, k] >= -TAU_MAX)
-    opt.subject_to(q_opt[6:18, k] <= JOINT_UPPER.reshape(-1, 1))
-    opt.subject_to(q_opt[6:18, k] >= JOINT_LOWER.reshape(-1, 1))
+    # opt.subject_to(u_opt[6:18, k] <= TAU_MAX)
+    # opt.subject_to(u_opt[6:18, k] >= -TAU_MAX)
+    # opt.subject_to(q_opt[6:18, k] <= JOINT_UPPER.reshape(-1, 1))
+    # opt.subject_to(q_opt[6:18, k] >= JOINT_LOWER.reshape(-1, 1))
 
-    # cost accumulation
-    costFunction += (q_opt[:,k] - q_d[:,k]).T @ Q_COST_WEIGHT @ (q_opt[:,k] - q_d[:,k])
-    costFunction += (qd_opt[:,k] - qd_d[:,k]).T @ QD_COST_WEIGHT @ (qd_opt[:,k] - qd_d[:,k])
-    costFunction += qdd_opt[:,k].T @ QDD_COST_WEIGHT @ qdd_opt[:,k]
+    # # cost accumulation
+    costFunction += (q_opt[:,k] - q_ref).T @ Q_COST_WEIGHT @ (q_opt[:,k] - q_ref)
+    costFunction += (qd_opt[:,k] - qd_ref).T @ QD_COST_WEIGHT @ (qd_opt[:,k] - qd_ref)
+    # costFunction += qdd_opt[:,k].T @ QDD_COST_WEIGHT @ qdd_opt[:,k]
     costFunction += u_opt[:,k].T @ U_COST_WEIGHT @ u_opt[:,k]
-    costFunction += (f_opt[:,k] - f_d[:,k]).T @ F_COST_WEIGHT @ (f_opt[:,k] - f_d[:,k])
+    costFunction += (f_opt[:,k] - f_ref).T @ F_COST_WEIGHT @ (f_opt[:,k] - f_ref)
 
-opt.set_initial(q_opt[:,0], q_initial)
-opt.set_initial(qd_opt[:,0], qd_initial)
-opt.set_initial(qdd_opt[:,0], qd_initial)
-opt.set_initial(u_opt[:,0], u_initial)
-opt.set_initial(f_opt[:,0], f_initial)
+# opt.set_initial(q_opt[:,0], q_initial)
+# opt.set_initial(qd_opt[:,0], qd_initial)
+# opt.set_initial(qdd_opt[:,0], qd_initial)
+# opt.set_initial(u_opt[:,0], u_initial)
+# opt.set_initial(f_opt[:,0], f_initial)
 
-opt.set_value(q_d, q_ref)
-opt.set_value(qd_d, qd_ref)
-# opt.set_value(qdd_d, qdd.reshape(-1, 1))
-# opt.set_value(u_d, u.reshape(-1, 1))
-opt.set_value(f_d, f_ref)
 
 opt.minimize(costFunction)
 
-opt.solver("ipopt", {"expand": False}, {"max_iter": 1000})
+opt.solver("ipopt", {"expand": False}, {"max_iter": 10000})
 
 try:
     print("FULL-BODY TRAJECTORY OPTIMIZATION")
@@ -237,20 +318,17 @@ try:
     COST_OPTIMAL = sol.value(costFunction)
     
     print(f"\nOptimal Cost: {COST_OPTIMAL:.6f}")
-    printSize(Q_OPT)
-    printSize(QD_OPT)
-    printSize(QDD_OPT)
-    printSize(U_OPT)
-    printSize(F_OPT)
 
 except RuntimeError as e:
     print(f"\n=== OPTIMIZATION FAILED ===")
     print(f"Error: {e}")
+    exit()
 
-
-
-
-
+print(Q_OPT[:,0])
+print(Q_OPT[:,1])
+print(Q_OPT[:,2])
+print(F_OPT[:,0])
+print(F_OPT[:,1])
 
 
 # fig, axs = plt.subplots(3, 3, figsize=(15, 8))  # Wider layout
@@ -360,22 +438,25 @@ dt = TIMESTEP
 
 for i in range(N):
     q_i = Q_OPT[:,i]
+    print("Forward kinematics: ", fk(q_i)[-15:])
     base_position = q_i[:3]
     base_orientation = R.from_euler("xyz", q_i[3:6], degrees=False).as_quat()
     joint_positions = {
-        "FL_hip_joint": -q_i[6], 
-        "FL_thigh_joint": -q_i[7],
-        "FL_calf_joint": -q_i[8],
-        "FR_hip_joint": -q_i[9],
-        "FR_thigh_joint": -q_i[10],
-        "FR_calf_joint": -q_i[11],
-        "RL_hip_joint": -q_i[12],
-        "RL_thigh_joint": -q_i[13],
-        "RL_calf_joint": -q_i[14],
-        "RR_hip_joint": -q_i[15],
-        "RR_thigh_joint": -q_i[16],
-        "RR_calf_joint": -q_i[17],
+        "FL_hip_joint": q_i[6], 
+        "FL_thigh_joint": q_i[7],
+        "FL_calf_joint": q_i[8],
+        "RR_hip_joint": q_i[9],
+        "RR_thigh_joint": q_i[10],
+        "RR_calf_joint": q_i[11],
+        "FR_hip_joint": q_i[12],
+        "FR_thigh_joint": q_i[13],
+        "FR_calf_joint": q_i[14],
+        "RL_hip_joint": q_i[15],
+        "RL_thigh_joint": q_i[16],
+        "RL_calf_joint": q_i[17],
     }
+
+    print(q_i)
 
     robot_logger.log_state(
         logtime=current_time,

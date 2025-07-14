@@ -295,15 +295,17 @@ from go2.robot.robot import *
 from go2.robot.morphology import *
 from go2.utils.math_utils import *
 
-def fk(q):
+def fk(q, ):
     if isinstance(q, (ca.SX, ca.MX)):
-        cs_x = ca.SX.sym("x", 15, 1)
         cs_q = ca.SX.sym("q", NUM_Q, 1)
+        
         pinocchio.casadi.forwardKinematics(ad_model, ad_data, cs_q)
-        bodyPos = data.oMf[BASE_FRAME].translation        
+        pinocchio.casadi.framesForwardKinematics(ad_model, ad_data, cs_q)
+        pinocchio.casadi.updateFramePlacements(ad_model, ad_data)
+        bodyPos = ad_data.oMf[BASE_FRAME].translation        
         eePos = []
         for frameId in EE_FRAME_IDS:
-            ee_pos = data.oMf[frameId].translation
+            ee_pos = ad_data.oMf[frameId].translation
             eePos.append(ee_pos)
         cs_x = ca.vertcat(
             bodyPos,
@@ -314,6 +316,8 @@ def fk(q):
     else:
         x = []
         pin.forwardKinematics(model, data, q)
+        pin.framesForwardKinematics(model, data, q)
+        pin.updateFramePlacements(model, data)
         bodyPosition = data.oMf[BASE_FRAME].translation
         x[:3] = bodyPosition
         for frameId in EE_FRAME_IDS:

@@ -53,10 +53,6 @@ NUM_C = 4
 # BODY_NAME = "BODY"
 # BODY_FRAME = Frame.BASE_LINK
 
-EE_FRAME_IDS = [26, 58, 34, 66]
-FOOT_NAMES = ["LF_FOOT", "LH_FOOT", "RF_FOOT", "RH_FOOT"]
-BASE_FRAME = 2
-BASE_NAME = "BASE"
 
 # universe, 0, FIXED_JOINT
 # root_joint, 1, JOINT

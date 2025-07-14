@@ -7,6 +7,8 @@ from go2.utils.math_utils import *
 
 def computeFullContactJacobians(q):
     if isinstance(q, ca.SX):
+        pinocchio.casadi.forwardKinematics(ad_model, ad_data, q)
+        pinocchio.casadi.updateFramePlacements(ad_model, ad_data)
         Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, 26, pin.LOCAL_WORLD_ALIGNED)[:3, :]
         Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, 58, pin.LOCAL_WORLD_ALIGNED)[:3, :]
         Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, q, 34, pin.LOCAL_WORLD_ALIGNED)[:3, :]
@@ -16,6 +18,8 @@ def computeFullContactJacobians(q):
     elif isinstance(q, ca.MX):
         cs_q = ca.SX.sym("q", NUM_Q, 1)
         cs_Jc = ca.SX.sym("Jc", NUM_U, NUM_Q)
+        pinocchio.casadi.forwardKinematics(ad_model, ad_data, cs_q)
+        pinocchio.casadi.updateFramePlacements(ad_model, ad_data)
         cs_Jc_FL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, 26, pin.LOCAL_WORLD_ALIGNED)[:3, :]
         cs_Jc_FR = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, 58, pin.LOCAL_WORLD_ALIGNED)[:3, :]
         cs_Jc_RL = pinocchio.casadi.computeFrameJacobian(ad_model, ad_data, cs_q, 34, pin.LOCAL_WORLD_ALIGNED)[:3, :]
@@ -24,8 +28,9 @@ def computeFullContactJacobians(q):
         cs_full_Jc_fn = ca.Function("cs_full_Jc_fn", [cs_q], [cs_Jc])
         Jc = cs_full_Jc_fn(q)
     else:
+        pin.forwardKinematics(model, data, q)
+        pin.updateFramePlacements(model, data)
         pin.computeJointJacobians(model, data, q)
-        pin.framesForwardKinematics(model, data, q)
         J_list = []
         for frameId in EE_FRAME_IDS:
             J = pin.getFrameJacobian(model, data, frameId, pin.LOCAL_WORLD_ALIGNED)

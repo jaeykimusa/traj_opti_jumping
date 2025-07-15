@@ -10,5 +10,5 @@ pip3 install -r ./requirements.txt
 
 ## Run
 ```bash
-TRAJOPT_LOG_LEVEL=info python3 run.py
+python3 run.py --visualize --num_steps=30
 ```

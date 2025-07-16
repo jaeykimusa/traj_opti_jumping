@@ -43,6 +43,14 @@ class JacobianResult:
   rh_jac: Union[np.ndarray, casadi.SX]
 
 
+@dataclass
+class JacobianDerivativeResult:
+  lf_jac_dot: Union[np.ndarray, casadi.SX]
+  lh_jac_dot: Union[np.ndarray, casadi.SX]
+  rf_jac_dot: Union[np.ndarray, casadi.SX]
+  rh_jac_dot: Union[np.ndarray, casadi.SX]
+
+
 def forward_kinematics(model, data, q: np.ndarray) -> ForwardKinematicsResult:
   pin.framesForwardKinematics(model, data, q)
   pin.updateFramePlacements(model, data)
@@ -67,6 +75,44 @@ def compute_jacobians(model, data, q: np.ndarray) -> JacobianResult:
     lh_jac=pin.getFrameJacobian(model, data, model.getFrameId("RL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
     rf_jac=pin.getFrameJacobian(model, data, model.getFrameId("FR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
     rh_jac=pin.getFrameJacobian(model, data, model.getFrameId("RR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
+  )
+
+
+def compute_jacobian_derivatives(model, data, q: np.ndarray, v: np.ndarray) -> JacobianDerivativeResult:
+  """Compute time derivatives of foot Jacobians using finite differences"""
+  pin.computeJointJacobians(model, data, q)
+  pin.framesForwardKinematics(model, data, q)
+  
+  # Get current Jacobians
+  jac_lf = pin.getFrameJacobian(model, data, model.getFrameId("FL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+  jac_lh = pin.getFrameJacobian(model, data, model.getFrameId("RL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+  jac_rf = pin.getFrameJacobian(model, data, model.getFrameId("FR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+  jac_rh = pin.getFrameJacobian(model, data, model.getFrameId("RR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+  
+  # Small perturbation for finite differences
+  eps = 1e-8
+  q_pert = q + eps * v
+  
+  # Compute perturbed Jacobians
+  pin.computeJointJacobians(model, data, q_pert)
+  pin.framesForwardKinematics(model, data, q_pert)
+  
+  jac_lf_pert = pin.getFrameJacobian(model, data, model.getFrameId("FL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+  jac_lh_pert = pin.getFrameJacobian(model, data, model.getFrameId("RL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+  jac_rf_pert = pin.getFrameJacobian(model, data, model.getFrameId("FR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+  jac_rh_pert = pin.getFrameJacobian(model, data, model.getFrameId("RR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+  
+  # Compute derivatives using finite differences
+  jac_lf_dot = (jac_lf_pert - jac_lf) / eps
+  jac_lh_dot = (jac_lh_pert - jac_lh) / eps
+  jac_rf_dot = (jac_rf_pert - jac_rf) / eps
+  jac_rh_dot = (jac_rh_pert - jac_rh) / eps
+  
+  return JacobianDerivativeResult(
+    lf_jac_dot=jac_lf_dot,
+    lh_jac_dot=jac_lh_dot,
+    rf_jac_dot=jac_rf_dot,
+    rh_jac_dot=jac_rh_dot,
   )
 
 
@@ -99,12 +145,38 @@ def compute_jacobians_casadi(cmodel, cdata, q: casadi.SX) -> JacobianResult:
   cpin.computeJointJacobians(cmodel, cdata, q)
   cpin.framesForwardKinematics(cmodel, cdata, q)
   return JacobianResult(
-      com_jac=cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("base"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
+    com_jac=cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("base"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
     lf_jac=cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("FL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
     lh_jac=cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("RL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
     rf_jac=cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("FR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
     rh_jac=cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("RR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
   )
+
+
+def compute_jacobian_derivatives_casadi(cmodel, cdata, q: casadi.SX, v: casadi.SX) -> JacobianDerivativeResult:
+  """Compute time derivatives of foot Jacobians using CasADi automatic differentiation"""
+  cpin.computeJointJacobians(cmodel, cdata, q)
+  cpin.framesForwardKinematics(cmodel, cdata, q)
+  
+  # Get Jacobians
+  jac_lf = cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("FL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+  jac_lh = cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("RL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+  jac_rf = cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("FR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+  jac_rh = cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("RR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
+  
+  # Compute derivatives using CasADi jacobian function
+  jac_lf_dot = casadi.jtimes(jac_lf, q, v)
+  jac_lh_dot = casadi.jtimes(jac_lh, q, v)
+  jac_rf_dot = casadi.jtimes(jac_rf, q, v)
+  jac_rh_dot = casadi.jtimes(jac_rh, q, v)
+  
+  return JacobianDerivativeResult(
+    lf_jac_dot=jac_lf_dot,
+    lh_jac_dot=jac_lh_dot,
+    rf_jac_dot=jac_rf_dot,
+    rh_jac_dot=jac_rh_dot,
+  )
+
 
 def forward_dynamics_casadi(cmodel, cdata, q: casadi.SX, v: casadi.SX, tau: casadi.SX, f: casadi.SX) -> casadi.SX:
   jacres = compute_jacobians_casadi(cmodel, cdata, q)
@@ -181,6 +253,21 @@ def main(args: argparse.Namespace):
   assert np.allclose(compute_jacobians(model, data, q_rand).rf_jac, np.array(fn_jac_rf(q_rand, v_rand, tau_rand, f_rand)).reshape(3, -1))
   assert np.allclose(compute_jacobians(model, data, q_rand).rh_jac, np.array(fn_jac_rh(q_rand, v_rand, tau_rand, f_rand)).reshape(3, -1))
 
+  logger.info("Creating casadi functions for jacobian derivatives")
+  jac_dot_res_casadi = compute_jacobian_derivatives_casadi(cmodel, cdata, q_sym, v_sym)
+  fn_jac_dot_lf = casadi.Function("jac_dot_lf", [q_sym, v_sym, tau_sym, f_sym], [jac_dot_res_casadi.lf_jac_dot])
+  fn_jac_dot_lh = casadi.Function("jac_dot_lh", [q_sym, v_sym, tau_sym, f_sym], [jac_dot_res_casadi.lh_jac_dot])
+  fn_jac_dot_rf = casadi.Function("jac_dot_rf", [q_sym, v_sym, tau_sym, f_sym], [jac_dot_res_casadi.rf_jac_dot])
+  fn_jac_dot_rh = casadi.Function("jac_dot_rh", [q_sym, v_sym, tau_sym, f_sym], [jac_dot_res_casadi.rh_jac_dot])
+
+  logger.info("Checking jacobian derivatives")
+  jac_dot_numerical = compute_jacobian_derivatives(model, data, q_rand, v_rand)
+  assert np.allclose(jac_dot_numerical.lf_jac_dot, np.array(fn_jac_dot_lf(q_rand, v_rand, tau_rand, f_rand)).reshape(3, -1), atol=1e-6)
+  assert np.allclose(jac_dot_numerical.lh_jac_dot, np.array(fn_jac_dot_lh(q_rand, v_rand, tau_rand, f_rand)).reshape(3, -1), atol=1e-6)
+  assert np.allclose(jac_dot_numerical.rf_jac_dot, np.array(fn_jac_dot_rf(q_rand, v_rand, tau_rand, f_rand)).reshape(3, -1), atol=1e-6)
+  assert np.allclose(jac_dot_numerical.rh_jac_dot, np.array(fn_jac_dot_rh(q_rand, v_rand, tau_rand, f_rand)).reshape(3, -1), atol=1e-6)
+  logger.info("✓ Jacobian derivatives verification passed!")
+
   logger.info("Creating casadi functions for forward dynamics")
   fn_fd = casadi.Function("fd", [q_sym, v_sym, tau_sym, f_sym], [forward_dynamics_casadi(cmodel, cdata, q_sym, v_sym, tau_sym, f_sym)])
 
@@ -211,7 +298,7 @@ def main(args: argparse.Namespace):
   opti.subject_to(v_opt[:, 0] == v_initial)
 
   logger.info("Adding final position constraints")
-  q_final = np.array([2.0,  0,  0.33, 0.0,0, 0, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802])
+  q_final = np.array([1.5,  0,  0.33, 0.0,0, 0, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802])
   opti.subject_to(q_opt[:, -1] == q_final)
 
   logger.info("Adding final velocity constraints")
@@ -224,21 +311,16 @@ def main(args: argparse.Namespace):
 
   logger.info("Adding knee height constraints")
   knee_clearance = args.knee_clearance  # minimum clearance from ground
-#   for t in range(args.num_steps + 1):
-#     lf_knee_z = fn_fk_lf_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2]
-#     lh_knee_z = fn_fk_lh_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2]
-#     rf_knee_z = fn_fk_rf_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2]
-#     rh_knee_z = fn_fk_rh_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2]
-    
-#     opti.subject_to(lf_knee_z >= knee_clearance)
-#     opti.subject_to(lh_knee_z >= knee_clearance)
-#     opti.subject_to(rf_knee_z >= knee_clearance)
-#     opti.subject_to(rh_knee_z >= knee_clearance)
 
   mu = 0.5
-  logger.info(f"Adding stance 1 friction cone constraints and forward kinematics constraints: mu = {mu}")
+  logger.info(f"Adding stance 1 friction cone constraints and contact constraints: mu = {mu}")
   stance1_start = int(0)
   stance1_end = int(0.3 * args.num_steps)
+  
+  # Store initial foot positions for contact constraints
+  fk_initial = forward_kinematics(model, data, q_initial)
+  initial_foot_positions = [fk_initial.lf_pos, fk_initial.lh_pos, fk_initial.rf_pos, fk_initial.rh_pos]
+  
   for t in range(stance1_start, stance1_end):
     for i in range(4):
       fx = f_opt[3*i, t]
@@ -250,10 +332,33 @@ def main(args: argparse.Namespace):
       opti.subject_to(fy <= mu * fz)
       opti.subject_to(fy >= -mu * fz)
 
-    opti.subject_to(fn_fk_lf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == forward_kinematics(model, data, q_initial).lf_pos)
-    opti.subject_to(fn_fk_lh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == forward_kinematics(model, data, q_initial).lh_pos)
-    opti.subject_to(fn_fk_rf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == forward_kinematics(model, data, q_initial).rf_pos)
-    opti.subject_to(fn_fk_rh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == forward_kinematics(model, data, q_initial).rh_pos)
+    # Foot position constraints (feet stay at initial positions)
+    opti.subject_to(fn_fk_lf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_foot_positions[0])
+    opti.subject_to(fn_fk_lh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_foot_positions[1])
+    opti.subject_to(fn_fk_rf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_foot_positions[2])
+    opti.subject_to(fn_fk_rh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_foot_positions[3])
+    
+    # Contact constraints: -J_s^T * qdd = Jd_s * qd
+    # This ensures that foot accelerations are zero (contact constraint from the paper)
+    if t < stance1_end - 1:  # Don't apply on last timestep to avoid derivative issues
+      qdd = fn_fd(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      
+      # For each foot, apply the contact constraint: J_s * qdd + Jd_s * qd = 0
+      jac_lf = fn_jac_lf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      jac_lh = fn_jac_lh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      jac_rf = fn_jac_rf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      jac_rh = fn_jac_rh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      
+      jac_dot_lf = fn_jac_dot_lf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      jac_dot_lh = fn_jac_dot_lh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      jac_dot_rf = fn_jac_dot_rf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      jac_dot_rh = fn_jac_dot_rh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      
+      # Contact constraint for each foot: J_s * qdd + Jd_s * qd = 0 (foot acceleration = 0)
+      opti.subject_to(jac_lf @ qdd + jac_dot_lf @ v_opt[:, t] == 0)
+      opti.subject_to(jac_lh @ qdd + jac_dot_lh @ v_opt[:, t] == 0)
+      opti.subject_to(jac_rf @ qdd + jac_dot_rf @ v_opt[:, t] == 0)
+      opti.subject_to(jac_rh @ qdd + jac_dot_rh @ v_opt[:, t] == 0)
 
   logger.info("Adding flight friction cone constraints")
   flight_start = int(stance1_end)
@@ -267,9 +372,14 @@ def main(args: argparse.Namespace):
       opti.subject_to(fy == 0)
       opti.subject_to(fz == 0)
 
-  logger.info(f"Adding stance 2 friction cone constraints: mu = {mu}")
+  logger.info(f"Adding stance 2 friction cone constraints and contact constraints: mu = {mu}")
   stance2_start = int(flight_end)
   stance2_end = int(args.num_steps) + 1
+  
+  # Store final foot positions for contact constraints
+  fk_final = forward_kinematics(model, data, q_final)
+  final_foot_positions = [fk_final.lf_pos, fk_final.lh_pos, fk_final.rf_pos, fk_final.rh_pos]
+  
   for t in range(stance2_start, stance2_end):
     for i in range(4):
       if t == stance2_end - 1:
@@ -283,15 +393,39 @@ def main(args: argparse.Namespace):
       opti.subject_to(fy <= mu * fz)
       opti.subject_to(fy >= -mu * fz)
     
-    opti.subject_to(fn_fk_lf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == forward_kinematics(model, data, q_final).lf_pos)
-    opti.subject_to(fn_fk_lh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == forward_kinematics(model, data, q_final).lh_pos)
-    opti.subject_to(fn_fk_rf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == forward_kinematics(model, data, q_final).rf_pos)
-    opti.subject_to(fn_fk_rh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == forward_kinematics(model, data, q_final).rh_pos)
+    # Foot position constraints (feet stay at final positions)
+    opti.subject_to(fn_fk_lf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == final_foot_positions[0])
+    opti.subject_to(fn_fk_lh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == final_foot_positions[1])
+    opti.subject_to(fn_fk_rf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == final_foot_positions[2])
+    opti.subject_to(fn_fk_rh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == final_foot_positions[3])
 
+    # Knee clearance constraints
     opti.subject_to(fn_fk_lf_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > knee_clearance)
     opti.subject_to(fn_fk_lh_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > knee_clearance)
     opti.subject_to(fn_fk_rf_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > knee_clearance)
     opti.subject_to(fn_fk_rh_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > knee_clearance)
+    
+    # Contact constraints: -J_s^T * qdd = Jd_s * qd
+    # This ensures that foot accelerations are zero (contact constraint from the paper)
+    if t < stance2_end - 1:  # Don't apply on last timestep to avoid derivative issues
+      qdd = fn_fd(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      
+      # For each foot, apply the contact constraint: J_s * qdd + Jd_s * qd = 0
+      jac_lf = fn_jac_lf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      jac_lh = fn_jac_lh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      jac_rf = fn_jac_rf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      jac_rh = fn_jac_rh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      
+      jac_dot_lf = fn_jac_dot_lf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      jac_dot_lh = fn_jac_dot_lh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      jac_dot_rf = fn_jac_dot_rf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      jac_dot_rh = fn_jac_dot_rh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])
+      
+      # Contact constraint for each foot: J_s * qdd + Jd_s * qd = 0 (foot acceleration = 0)
+      opti.subject_to(jac_lf @ qdd + jac_dot_lf @ v_opt[:, t] == 0)
+      opti.subject_to(jac_lh @ qdd + jac_dot_lh @ v_opt[:, t] == 0)
+      opti.subject_to(jac_rf @ qdd + jac_dot_rf @ v_opt[:, t] == 0)
+      opti.subject_to(jac_rh @ qdd + jac_dot_rh @ v_opt[:, t] == 0)
 
   ## Cost function
   logger.info("Adding cost function")
@@ -321,8 +455,6 @@ def main(args: argparse.Namespace):
     logger.info("Visualizing optimization problem")
     rr.init("dsa", spawn=True)
 
-
-
     logger.info("Logging robot states")
     for i in range(args.num_steps + 1):
       q_i = sol.value(q_opt)[:,i]
@@ -343,7 +475,6 @@ def main(args: argparse.Namespace):
           "RR_thigh_joint": q_i[16],
           "RR_calf_joint": q_i[17],
       }
-
 
       robot_logger.log_state(
           logtime=t_start + i * args.dt,

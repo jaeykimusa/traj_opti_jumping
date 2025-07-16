@@ -23,7 +23,8 @@ opt = ca.Opti()
 N = 100
 TIMESTEP = 0.02 # seconds
 TOTAL_TIME = N * TIMESTEP # 2 seconds
-
+print(q_ref[:,0])
+exit()
 # decision variables
 q_opt = opt.variable(NUM_Q, N) 
 qd_opt = opt.variable(NUM_Q, N)

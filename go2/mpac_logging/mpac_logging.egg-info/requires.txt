@@ -1,0 +1,9 @@
+ruff==0.9.7
+pre-commit
+scipy
+lxml
+rerun-sdk==0.23.1
+trimesh
+robot_descriptions
+urdfdom-py@ git+https://github.com/ros/urdf_parser_py.git
+yourdfpy

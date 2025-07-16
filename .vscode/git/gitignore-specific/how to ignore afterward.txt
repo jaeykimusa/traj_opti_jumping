@@ -1,0 +1,86 @@
+
+=============================================================================
+GIT SKILLS: MANAGING GENERATED FILES (.DS_Store, __pycache__, .conda)
+=============================================================================
+
+This section summarizes essential Git commands and practices for keeping
+your repository clean by ignoring and removing common automatically generated
+files from your operating system, IDEs, and Python itself.
+
+=============================================================================
+KEY PRINCIPLES
+=============================================================================
+- .gitignore: Tells Git what files/folders to *never track*.
+- git rm --cached: Removes *already tracked* files from Git's index without
+                   deleting them from your local filesystem.
+- git push: Updates the remote repository (e.g., GitHub).
+
+=============================================================================
+1. .gitignore SETUP
+=============================================================================
+Purpose: Define what files/folders Git should ignore from now on.
+
+Action:
+  a. Create or edit the `.gitignore` file at the ROOT of your Git repository
+     (e.g., `traj_opti_jumping/.gitignore`).
+  b. Add the following patterns:
+
+  --- .gitignore contents ---
+  # macOS system files
+  *.DS_Store
+
+  # Python bytecode
+  **/__pycache__/
+  *.pyc
+
+  # Conda cache/environment (ONLY if it was accidentally committed inside the repo)
+  # Note: .conda is usually in your user home dir, not typically in a project.
+  .conda/
+
+  # Common Python virtual environment folders (add if applicable to your project)
+  venv/
+  .venv/
+  env/
+  --- End .gitignore contents ---
+
+  c. Commit the `.gitignore` file to your repository:
+     $ git add .gitignore
+     $ git commit -m "Add common exclusions to .gitignore"
+     $ git push origin your-branch-name  # Replace 'your-branch-name' (e.g., main/master)
+
+=============================================================================
+2. REMOVING ALREADY TRACKED FILES (HISTORICAL CLEANUP)
+=============================================================================
+Problem: .gitignore only affects *future* tracking. Files already committed
+         will remain in your Git history and on GitHub.
+Solution: Use `git rm --cached` to untrack them.
+
+Action:
+  a. Ensure you are in the ROOT directory of your Git repository.
+  b. Execute the following commands to remove specific types of files/folders
+     from Git's tracking (they will remain on your local disk):
+
+     # Remove .DS_Store files recursively from Git's index:
+     $ find . -name ".DS_Store" -print0 | xargs -0 git rm --cached --ignore-unmatch
+
+     # Remove __pycache__ directories recursively from Git's index:
+     $ git rm --cached -r __pycache__ --ignore-unmatch
+
+     # Remove .conda directory recursively from Git's index:
+     # (Only if you're certain it was committed inside this repo's path)
+     $ git rm --cached -r .conda --ignore-unmatch
+
+  c. Commit these removals to create a new commit in your history:
+     $ git commit -m "Clean: Remove tracked generated files (__pycache__, .DS_Store, .conda)"
+
+  d. Push this commit to your remote repository (e.g., GitHub):
+     $ git push origin your-branch-name  # Replace 'your-branch-name'
+
+Outcome:
+  - Files will disappear from the latest version of your repo on GitHub.
+  - Locally, these files remain but are now ignored by Git.
+  - Future generated files of these types will also be ignored automatically.
+
+=============================================================================
+END GIT SKILLS NOTES
+=============================================================================

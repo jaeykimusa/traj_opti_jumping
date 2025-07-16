@@ -87,7 +87,7 @@ def compute_jacobians_casadi(cmodel, cdata, q: casadi.SX) -> JacobianResult:
   cpin.computeJointJacobians(cmodel, cdata, q)
   cpin.framesForwardKinematics(cmodel, cdata, q)
   return JacobianResult(
-      com_jac=cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("base"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
+    com_jac=cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("base"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
     lf_jac=cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("FL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
     lh_jac=cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("RL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
     rf_jac=cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("FR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
@@ -183,7 +183,7 @@ def main(args: argparse.Namespace):
     opti.subject_to(v_opt[:, t + 1] == v_opt[:, t] + fn_fd(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) * dt) # integrate velocity
 
   logger.info("Adding initial position constraints")
-  q_initial = np.array([0.0,  0,  0.33, 0,0,0, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802])
+  q_initial = np.array([0.0,  0,  0.33, 0, 0, 0, 0, 0.806, -1.802, 0,0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
   opti.subject_to(q_opt[:, 0] == q_initial)
 
   logger.info("Adding initial velocity constraints")
@@ -191,7 +191,7 @@ def main(args: argparse.Namespace):
   opti.subject_to(v_opt[:, 0] == v_initial)
 
   logger.info("Adding final position constraints")
-  q_final = np.array([1.0,  0,  0.33, 0.0,0, 0, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802])
+  q_final = np.array([2.0, 0, 0.33, 0, 0, 0, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802, 0, 0.806, -1.802])
   opti.subject_to(q_opt[:, -1] == q_final)
 
   logger.info("Adding final velocity constraints")

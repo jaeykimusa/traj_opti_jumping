@@ -1,0 +1,17 @@
+{
+    "files.exclude": {
+        "**/.git": true, // Default, hides .git folder
+        "**/.svn": true, // Default
+        "**/.hg": true,  // Default
+        "**/CVS": true,  // Default
+        "**/.DS_Store": true, // Hide macOS specific files
+        "**/__pycache__": true, // Hide Python bytecode folders
+        "**/go2_py/": true, // Hide your specific virtual environment folder
+        "**/.conda": true,
+        // Add other exclusions here, e.g.:
+        // "**/node_modules": true,
+        // "*.log": true,
+        // "**/*.bak": true
+    },
+    // Other settings...
+}

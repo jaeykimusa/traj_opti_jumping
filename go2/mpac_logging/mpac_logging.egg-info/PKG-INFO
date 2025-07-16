@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: mpac_logging
+Version: 0.0.2
+Requires-Dist: ruff==0.9.7
+Requires-Dist: pre-commit
+Requires-Dist: scipy
+Requires-Dist: lxml
+Requires-Dist: rerun-sdk==0.23.1
+Requires-Dist: trimesh
+Requires-Dist: robot_descriptions
+Requires-Dist: urdfdom-py@ git+https://github.com/ros/urdf_parser_py.git
+Requires-Dist: yourdfpy

@@ -45,6 +45,7 @@ class JacobianResult:
 
 @dataclass
 class JacobianDerivativeResult:
+  com_jac_dot: Union[np.ndarray, casadi.SX]
   lf_jac_dot: Union[np.ndarray, casadi.SX]
   lh_jac_dot: Union[np.ndarray, casadi.SX]
   rf_jac_dot: Union[np.ndarray, casadi.SX]
@@ -79,40 +80,15 @@ def compute_jacobians(model, data, q: np.ndarray) -> JacobianResult:
 
 
 def compute_jacobian_derivatives(model, data, q: np.ndarray, v: np.ndarray) -> JacobianDerivativeResult:
-  """Compute time derivatives of foot Jacobians using finite differences"""
-  pin.computeJointJacobians(model, data, q)
-  pin.framesForwardKinematics(model, data, q)
-  
-  # Get current Jacobians
-  jac_lf = pin.getFrameJacobian(model, data, model.getFrameId("FL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-  jac_lh = pin.getFrameJacobian(model, data, model.getFrameId("RL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-  jac_rf = pin.getFrameJacobian(model, data, model.getFrameId("FR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-  jac_rh = pin.getFrameJacobian(model, data, model.getFrameId("RR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-  
-  # Small perturbation for finite differences
-  eps = 1e-8
-  q_pert = q + eps * v
-  
-  # Compute perturbed Jacobians
-  pin.computeJointJacobians(model, data, q_pert)
-  pin.framesForwardKinematics(model, data, q_pert)
-  
-  jac_lf_pert = pin.getFrameJacobian(model, data, model.getFrameId("FL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-  jac_lh_pert = pin.getFrameJacobian(model, data, model.getFrameId("RL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-  jac_rf_pert = pin.getFrameJacobian(model, data, model.getFrameId("FR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-  jac_rh_pert = pin.getFrameJacobian(model, data, model.getFrameId("RR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-  
-  # Compute derivatives using finite differences
-  jac_lf_dot = (jac_lf_pert - jac_lf) / eps
-  jac_lh_dot = (jac_lh_pert - jac_lh) / eps
-  jac_rf_dot = (jac_rf_pert - jac_rf) / eps
-  jac_rh_dot = (jac_rh_pert - jac_rh) / eps
+  pin.computeJointJacobiansTimeVariation(model, data, q, v)
+  # pin.framesForwardKinematics(model, data, q)
   
   return JacobianDerivativeResult(
-    lf_jac_dot=jac_lf_dot,
-    lh_jac_dot=jac_lh_dot,
-    rf_jac_dot=jac_rf_dot,
-    rh_jac_dot=jac_rh_dot,
+    com_jac_dot =pin.getFrameJacobianTimeVariation(model, data, model.getFrameId("base"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
+    jac_lf_dot = pin.getFrameJacobianTimeVariation(model, data, model.getFrameId("FL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
+    jac_lh_dot = pin.getFrameJacobianTimeVariation(model, data, model.getFrameId("RL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
+    jac_rf_dot = pin.getFrameJacobianTimeVariation(model, data, model.getFrameId("FR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
+    jac_rh_dot = pin.getFrameJacobianTimeVariation(model, data, model.getFrameId("RR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
   )
 
 
@@ -154,27 +130,14 @@ def compute_jacobians_casadi(cmodel, cdata, q: casadi.SX) -> JacobianResult:
 
 
 def compute_jacobian_derivatives_casadi(cmodel, cdata, q: casadi.SX, v: casadi.SX) -> JacobianDerivativeResult:
-  """Compute time derivatives of foot Jacobians using CasADi automatic differentiation"""
-  cpin.computeJointJacobians(cmodel, cdata, q)
-  cpin.framesForwardKinematics(cmodel, cdata, q)
-  
-  # Get Jacobians
-  jac_lf = cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("FL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-  jac_lh = cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("RL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-  jac_rf = cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("FR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-  jac_rh = cpin.getFrameJacobian(cmodel, cdata, cmodel.getFrameId("RR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :]
-  
-  # Compute derivatives using CasADi jacobian function
-  jac_lf_dot = casadi.jtimes(jac_lf, q, v)
-  jac_lh_dot = casadi.jtimes(jac_lh, q, v)
-  jac_rf_dot = casadi.jtimes(jac_rf, q, v)
-  jac_rh_dot = casadi.jtimes(jac_rh, q, v)
-  
+  cpin.computeJointJacobiansTimeVariation(cmodel, cdata, q, v)
+  # cpin.framesForwardKinematics(cmodel, cdata, q)
   return JacobianDerivativeResult(
-    lf_jac_dot=jac_lf_dot,
-    lh_jac_dot=jac_lh_dot,
-    rf_jac_dot=jac_rf_dot,
-    rh_jac_dot=jac_rh_dot,
+    com_jac_dot = cpin.getFrameJacobianTimeVariation(cmodel, cdata, cmodel.getFrameId("base"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
+    jac_lf_dot = cpin.getFrameJacobianTimeVariation(cmodel, cdata, cmodel.getFrameId("FL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
+    jac_lh_dot = cpin.getFrameJacobianTimeVariation(cmodel, cdata, cmodel.getFrameId("RL_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
+    jac_rf_dot = cpin.getFrameJacobianTimeVariation(cmodel, cdata, cmodel.getFrameId("FR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
+    jac_rh_dot = cpin.getFrameJacobianTimeVariation(cmodel, cdata, cmodel.getFrameId("RR_foot"), pin.LOCAL_WORLD_ALIGNED)[:3, :],
   )
 
 
@@ -255,6 +218,7 @@ def main(args: argparse.Namespace):
 
   logger.info("Creating casadi functions for jacobian derivatives")
   jac_dot_res_casadi = compute_jacobian_derivatives_casadi(cmodel, cdata, q_sym, v_sym)
+  fn_jac_dot_com = casadi.Function("jac_dot_com", [q_sym, v_sym, tau_sym, f_sym], [jac_dot_res_casadi.com_jac_dot])
   fn_jac_dot_lf = casadi.Function("jac_dot_lf", [q_sym, v_sym, tau_sym, f_sym], [jac_dot_res_casadi.lf_jac_dot])
   fn_jac_dot_lh = casadi.Function("jac_dot_lh", [q_sym, v_sym, tau_sym, f_sym], [jac_dot_res_casadi.lh_jac_dot])
   fn_jac_dot_rf = casadi.Function("jac_dot_rf", [q_sym, v_sym, tau_sym, f_sym], [jac_dot_res_casadi.rf_jac_dot])
@@ -262,6 +226,7 @@ def main(args: argparse.Namespace):
 
   logger.info("Checking jacobian derivatives")
   jac_dot_numerical = compute_jacobian_derivatives(model, data, q_rand, v_rand)
+  assert np.allclose(jac_dot_numerical.com_jac_dot, np.array(fn_jac_dot_com(q_rand, v_rand, tau_rand, f_rand)).reshape(3, -1), atol=1e-6)
   assert np.allclose(jac_dot_numerical.lf_jac_dot, np.array(fn_jac_dot_lf(q_rand, v_rand, tau_rand, f_rand)).reshape(3, -1), atol=1e-6)
   assert np.allclose(jac_dot_numerical.lh_jac_dot, np.array(fn_jac_dot_lh(q_rand, v_rand, tau_rand, f_rand)).reshape(3, -1), atol=1e-6)
   assert np.allclose(jac_dot_numerical.rf_jac_dot, np.array(fn_jac_dot_rf(q_rand, v_rand, tau_rand, f_rand)).reshape(3, -1), atol=1e-6)
@@ -312,7 +277,7 @@ def main(args: argparse.Namespace):
   logger.info("Adding knee height constraints")
   knee_clearance = args.knee_clearance  # minimum clearance from ground
 
-  mu = 0.5
+  mu = 0.8
   logger.info(f"Adding stance 1 friction cone constraints and contact constraints: mu = {mu}")
   stance1_start = int(0)
   stance1_end = int(0.3 * args.num_steps)

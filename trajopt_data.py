@@ -19,6 +19,9 @@ import numpy as np
 import rerun as rr
 from scipy.spatial.transform import Rotation as R
 
+import pickle
+import os
+import datetime
 
 
 @dataclass
@@ -114,6 +117,47 @@ def forward_dynamics_casadi(cmodel, cdata, q: casadi.SX, v: casadi.SX, tau: casa
   cpin.aba(cmodel, cdata, q, v, tau_total)
   return cdata.ddq
 
+def save_optimized_trajectory(q_sol, v_sol, tau_sol, f_sol, dt, num_steps, output_dir="../my_jumping_controller/trajectory_data"):
+    """
+    Save optimized trajectory data for MuJoCo simulation
+    """
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    trajectory_data = {
+        'q': q_sol,              # [18 x N+1] - your format
+        'v': v_sol,              # [18 x N+1] - your format
+        'tau': tau_sol,          # [18 x N+1] - your format (first 6 are zeros)
+        'f': f_sol,              # [12 x N+1] - contact forces
+        'dt': dt,                # Time step
+        'N': num_steps,          # Number of time steps
+        'total_time': num_steps * dt  # Total trajectory time
+    }
+    
+    # Save with timestamp
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"jumping_trajectory_{timestamp}.pkl"
+    filepath = os.path.join(output_dir, filename)
+    
+    with open(filepath, 'wb') as f:
+        pickle.dump(trajectory_data, f)
+    
+    print(f"\n=== TRAJECTORY SAVED ===")
+    print(f"File: {filepath}")
+    print(f"Shapes:")
+    print(f"  q: {q_sol.shape}")
+    print(f"  v: {v_sol.shape}")
+    print(f"  tau: {tau_sol.shape}")
+    print(f"  f: {f_sol.shape}")
+    print(f"Time: {num_steps * dt:.3f} seconds ({num_steps} steps)")
+    print("=" * 25)
+    
+    # Also save a 'latest' version for easy access
+    latest_filepath = os.path.join(output_dir, "jumping_trajectory_latest.pkl")
+    with open(latest_filepath, 'wb') as f:
+        pickle.dump(trajectory_data, f)
+    
+    return filepath
 
 def main(args: argparse.Namespace):
   logger = get_logger("trajopt", stdout_level=args.log_level)
@@ -196,9 +240,6 @@ def main(args: argparse.Namespace):
   f_opt = opti.variable(12, args.num_steps + 1)
   logger.debug(f"optimization variable shapes: q_opt: {q_opt.shape}, v_opt: {v_opt.shape}, tau_opt: {tau_opt.shape}, f_opt: {f_opt.shape}")
 
-  print(model.nq)
-  print(model.nv)
-  exit()
   logger.info("Adding dynamics constraints")
   for t in range(args.num_steps):
     dt = args.dt
@@ -317,6 +358,28 @@ def main(args: argparse.Namespace):
   logger.info(f"Optimization problem solved in {sol.stats()['iter_count']} iterations")
   logger.info("Solved optimization problem")
 
+  # EXTRACT AND SAVE OPTIMIZED TRAJECTORY
+  logger.info("Extracting optimized trajectory")
+  q_solution = sol.value(q_opt)      # Shape: [18, num_steps+1]
+  v_solution = sol.value(v_opt)      # Shape: [18, num_steps+1]
+  tau_solution = sol.value(tau_opt)  # Shape: [18, num_steps+1]
+  f_solution = sol.value(f_opt)      # Shape: [12, num_steps+1]
+  
+  # Save trajectory for MuJoCo simulation
+  logger.info("Saving trajectory for MuJoCo simulation")
+  try:
+      trajectory_file = save_optimized_trajectory(
+          q_sol=q_solution,
+          v_sol=v_solution,
+          tau_sol=tau_solution,
+          f_sol=f_solution,
+          dt=args.dt,
+          num_steps=args.num_steps
+      )
+      logger.info(f"Trajectory saved to: {trajectory_file}")
+  except Exception as e:
+      logger.error(f"Failed to save trajectory: {e}")
+
   if args.visualize:
     t_start = 0.0
     logger.info("Creating robot logger")
@@ -360,7 +423,7 @@ if __name__ == "__main__":
   parser.add_argument("--log_level", type=str, default="info")
   parser.add_argument("--visualize", action="store_true")
   parser.add_argument("--num_steps", type=int, default=30)
-  parser.add_argument("--dt", type=float, default=0.05)
+  parser.add_argument("--dt", type=float, default=0.02)
   parser.add_argument("--knee_clearance", type=float, default=0.08, help="Minimum knee height above ground (meters)")
   args = parser.parse_args()
 

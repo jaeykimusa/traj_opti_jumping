@@ -196,9 +196,6 @@ def main(args: argparse.Namespace):
   f_opt = opti.variable(12, args.num_steps + 1)
   logger.debug(f"optimization variable shapes: q_opt: {q_opt.shape}, v_opt: {v_opt.shape}, tau_opt: {tau_opt.shape}, f_opt: {f_opt.shape}")
 
-  print(model.nq)
-  print(model.nv)
-  exit()
   logger.info("Adding dynamics constraints")
   for t in range(args.num_steps):
     dt = args.dt
@@ -214,7 +211,7 @@ def main(args: argparse.Namespace):
   opti.subject_to(v_opt[:, 0] == v_initial)
 
   logger.info("Adding final position constraints")
-  q_final = np.array([2.0,  0,  0.33, 0.0,0, 0, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802])
+  q_final = np.array([1.0,  0,  0.33, np.pi/2, 0, 0, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802, 0,0.806, -1.802])
   opti.subject_to(q_opt[:, -1] == q_final)
 
   logger.info("Adding final velocity constraints")
@@ -360,7 +357,7 @@ if __name__ == "__main__":
   parser.add_argument("--log_level", type=str, default="info")
   parser.add_argument("--visualize", action="store_true")
   parser.add_argument("--num_steps", type=int, default=30)
-  parser.add_argument("--dt", type=float, default=0.05)
+  parser.add_argument("--dt", type=float, default=0.02)
   parser.add_argument("--knee_clearance", type=float, default=0.08, help="Minimum knee height above ground (meters)")
   args = parser.parse_args()
 

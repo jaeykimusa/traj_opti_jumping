@@ -226,6 +226,8 @@ class TrajectoryOptimization:
         self.logger.info("Creating optimization problem")
         opti = casadi.Opti()
 
+        num_phases = len(self.contact_sequence)
+
         # Decision variables
         q_opt = opti.variable(self.model.nq, self.num_steps + 1)
         v_opt = opti.variable(self.model.nv, self.num_steps + 1)

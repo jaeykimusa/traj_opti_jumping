@@ -16,6 +16,8 @@ from typing import Union, List, Optional
 import numpy as np
 import rerun as rr
 from scipy.spatial.transform import Rotation as R
+import matplotlib.pyplot as plt
+
 
 
 class TrajectoryOptimization:
@@ -265,15 +267,15 @@ class TrajectoryOptimization:
         for t in range(self.num_steps):
             opti.subject_to(tau_opt[:6, t] == 0)
         
-        tau_ub = 30
-        tau_lb = -30
-        joint_ub = np.array([0.15, 1.5, 1.5] * 4)
-        joint_lb = np.array([-0.15, -1.5, -1.5] * 4)
-        for t in range(self.num_steps):
-            opti.subject_to(q_opt[6:, t] <= joint_ub)
-            opti.subject_to(q_opt[6:, t] >= joint_lb)
-            opti.subject_to(tau_opt[:,t] <= tau_ub)
-            opti.subject_to(tau_opt[:,t] >= tau_lb)
+        # tau_ub = 30
+        # tau_lb = -30
+        # joint_ub = np.array([1.5, 1.5, 3.0] * 4)
+        # joint_lb = np.array([-1.5, -1.5, -1.5] * 4)
+        # for t in range(self.num_steps):
+        #     opti.subject_to(q_opt[6:, t] <= joint_ub)
+        #     opti.subject_to(q_opt[6:, t] >= joint_lb)
+        #     opti.subject_to(tau_opt[6:,t] <= tau_ub)
+        #     opti.subject_to(tau_opt[6:,t] >= tau_lb)
 
         # Phase definitions
         stance1_start = int(0)
@@ -473,6 +475,27 @@ class TrajectoryOptimization:
         self.v_final = v_final if v_final is not None else np.zeros(len(q_final) - 1)
 
 
+    def plots(self):
+        fig, axs = plt.subplots(3, 3, figsize=(15, 8))  # Wider layout
+        axs = axs.flatten()
+        
+        q = self.solution['q']
+        v = self.solution['v']
+        tau = self.solution['tau']
+        f = self.solution['q']
+
+        com_x = q[0,:]
+        com_z = q[2,:]
+        axs[0].plot(com_x, com_z, label="com")
+        axs[0].set_title("com position ")
+        axs[0].legend()
+        axs[0].set_xlabel("x")
+        axs[0].set_ylabel("z")
+
+        plt.tight_layout()
+        plt.show()
+
+
 if __name__ == "__main__":
 
     # contact_sequence = [
@@ -493,3 +516,5 @@ if __name__ == "__main__":
         print("Trajectory optimization completed successfully!")
     else:
         print("Trajectory optimization failed!")
+    
+    trajopt.plots()

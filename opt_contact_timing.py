@@ -1,9 +1,6 @@
 """
 Contact-timing and Trajectory Optimization for 3D Jumping on Quadruped Robots
-Paper implementation by Chuong Nguyen and Quan Nguyen
-
-This module generates optimal contact timings and reference trajectories
-for full-body trajectory optimization.
+Fixed version with proper phase timing distribution
 """
 
 import casadi as ca
@@ -45,7 +42,6 @@ class JumpTask:
 class ContactTimingOptimizer:
     """
     Implements contact timing optimization using simplified rigid body dynamics
-    as described in Section II-B of the paper.
     """
     
     def __init__(self, robot_params: RobotParams):
@@ -59,11 +55,14 @@ class ContactTimingOptimizer:
             'RL': np.array([-0.183, 0.13, 0])
         }
         
-        # Optimization weights from paper
+        # Optimization weights - adjusted for better phase distribution
         self.weights = {
-            'omega': 1e-2,    # Angular velocity
-            'force': 1e-3,    # Ground reaction forces
-            'rotation': 1e-1  # Rotation error
+            'omega': 1e-2,      # Angular velocity
+            'force': 1e-4,      # Ground reaction forces (reduced)
+            'rotation': 1e-1,   # Rotation error
+            'height': 10.0,     # Reward for achieving height
+            'distance': 5.0,    # Reward for achieving distance
+            'phase_penalty': 100.0  # Penalty for too short phases
         }
         
     def quaternion_to_rotation_matrix(self, q):
@@ -77,39 +76,59 @@ class ContactTimingOptimizer:
         )
         return R
     
+    def estimate_flight_time(self, jump_distance, jump_height=0):
+        """Estimate required flight time based on jump distance and height"""
+        # For horizontal jump: t_flight ≈ distance / average_velocity
+        # Assuming average horizontal velocity of 2-3 m/s
+        avg_velocity = 2.5
+        t_flight = jump_distance / avg_velocity
+        
+        # For vertical component
+        if jump_height > 0:
+            # t_up = sqrt(2*h/g)
+            t_up = np.sqrt(2 * jump_height / self.robot.gravity)
+            t_flight = max(t_flight, 2 * t_up)
+        
+        return np.clip(t_flight, 0.3, 1.5)  # Reasonable bounds
+    
     def optimize_contact_timing(self, 
                               contact_sequence: List[List[int]], 
                               jump_task: JumpTask,
-                              T_bounds: Tuple[float, float] = (0.3, 2.0),
-                              N_per_phase: int = 20) -> Dict:
+                              T_bounds: Tuple[float, float] = (0.3, 2.5),
+                              N_per_phase: int = 15) -> Dict:
         """
         Main optimization function that solves for optimal contact timings.
-        
-        Args:
-            contact_sequence: List of contact patterns for each phase
-                             e.g., [[1,1,1,1], [0,0,1,1], [0,0,0,0]]
-            jump_task: JumpTask object defining initial and final states
-            T_bounds: (T_min, T_max) bounds on total time
-            N_per_phase: Number of discretization points per phase
-            
-        Returns:
-            Dictionary containing optimal timings and reference trajectories
         """
         
         n_phases = len(contact_sequence)
         N_total = n_phases * N_per_phase
+        
+        # Estimate jump parameters
+        jump_distance = np.linalg.norm(jump_task.p_final[:2] - jump_task.p_initial[:2])
+        jump_height = max(0, jump_task.p_final[2] - jump_task.p_initial[2])
+        estimated_flight_time = self.estimate_flight_time(jump_distance, jump_height)
         
         # Create optimization problem
         opti = ca.Opti()
         
         # ============ Decision Variables ============
         
-        # Phase durations (main optimization variables!)
+        # Phase durations with phase-specific bounds
         T_phases = []
         for i in range(n_phases):
             T_i = opti.variable()
-            opti.subject_to(0.01 <= T_i)  # Min 10ms per phase
-            opti.subject_to(T_i <= 1.0)   # Max 1s per phase
+            
+            # Set phase-specific bounds based on contact type
+            if sum(contact_sequence[i]) == 4:  # Full contact (stance/landing)
+                opti.subject_to(0.1 <= T_i)   # Min 100ms
+                opti.subject_to(T_i <= 0.5)    # Max 500ms
+            elif sum(contact_sequence[i]) == 2:  # Partial contact (rear feet)
+                opti.subject_to(0.05 <= T_i)   # Min 50ms
+                opti.subject_to(T_i <= 0.3)    # Max 300ms
+            elif sum(contact_sequence[i]) == 0:  # Flight
+                opti.subject_to(0.2 <= T_i)    # Min 200ms for flight
+                opti.subject_to(T_i <= 1.5)    # Max 1.5s
+            
             T_phases.append(T_i)
         
         # Total time constraint
@@ -146,14 +165,22 @@ class ContactTimingOptimizer:
         opti.subject_to(states[0]['omega'] == 0)
         
         # ============ Final Conditions ============
-        opti.subject_to(states[-1]['p'] == jump_task.p_final)
-        # Final rotation handled through cost function
+        opti.subject_to(states[-1]['p'][0] == jump_task.p_final[0])  # X position
+        opti.subject_to(states[-1]['p'][1] == jump_task.p_final[1])  # Y position
+        # Z position is soft constraint through cost
         
         # ============ Cost Function ============
         cost = 0
         
+        # Add phase duration penalties to encourage proper distribution
+        for i in range(n_phases):
+            if sum(contact_sequence[i]) == 0:  # Flight phase
+                # Penalize flight phase being too short
+                cost += self.weights['phase_penalty'] * ((estimated_flight_time - T_phases[i])**2)
+        
         # ============ Dynamics Constraints ============
         k_global = 0
+        max_z = states[0]['p'][2]  # Initialize max height tracker
         
         for phase_idx in range(n_phases):
             # Variable timestep for this phase
@@ -169,6 +196,9 @@ class ContactTimingOptimizer:
                     v = states[k]['v']
                     q = states[k]['q']
                     omega = states[k]['omega']
+                    
+                    # Track maximum height for reward
+                    max_z = ca.fmax(max_z, p[2])
                     
                     # Current rotation matrix
                     R = self.quaternion_to_rotation_matrix(q)
@@ -237,15 +267,31 @@ class ContactTimingOptimizer:
                     for foot_name in ['FR', 'FL', 'RR', 'RL']:
                         f = controls[k][foot_name]
                         cost += self.weights['force'] * ca.dot(f, f)
+                    
+                    # Ground constraint during contact
+                    if sum(contacts) > 0:
+                        # Penalize foot being below ground during contact
+                        ground_violation = ca.fmin(0, p[2] - jump_task.p_initial[2] + 0.05)
+                        cost += 1000 * ground_violation**2
                 
             k_global += N_per_phase
         
-        # Terminal cost for rotation
-        q_final = states[-1]['q']
-        R_final = self.quaternion_to_rotation_matrix(q_final)
-        # Simple rotation error (could be improved)
-        rotation_error = ca.trace(ca.DM.eye(3) - R_final.T @ jump_task.R_final)
-        cost += self.weights['rotation'] * rotation_error
+        # Terminal costs
+        p_final = states[-1]['p']
+        v_final = states[-1]['v']
+        
+        # Reward for achieving target position
+        cost += self.weights['distance'] * ((p_final[0] - jump_task.p_final[0])**2 + 
+                                           (p_final[1] - jump_task.p_final[1])**2)
+        
+        # Reward for achieving height
+        cost += -self.weights['height'] * max_z
+        
+        # Soft landing (low final velocity)
+        cost += 10.0 * ca.dot(v_final, v_final)
+        
+        # Final height constraint (soft)
+        cost += 50.0 * (p_final[2] - jump_task.p_final[2])**2
         
         # ============ Solve Optimization ============
         opti.minimize(cost)
@@ -253,15 +299,17 @@ class ContactTimingOptimizer:
         # Solver settings
         opts = {
             'ipopt.print_level': 3,
-            'ipopt.max_iter': 500,
+            'ipopt.max_iter': 5000,
             'ipopt.tol': 1e-5,
-            'ipopt.acceptable_tol': 1e-4
+            'ipopt.acceptable_tol': 1e-4,
+            'ipopt.warm_start_init_point': 'yes'
         }
         opti.solver('ipopt', opts)
         
-        # Initial guess
-        self._set_initial_guess(opti, T_phases, states, controls, 
-                               contact_sequence, jump_task, N_per_phase)
+        # Better initial guess
+        self._set_improved_initial_guess(opti, T_phases, states, controls, 
+                                       contact_sequence, jump_task, N_per_phase,
+                                       estimated_flight_time)
         
         # Solve
         try:
@@ -327,48 +375,111 @@ class ContactTimingOptimizer:
             w1*z2 + x1*y2 - y1*x2 + z1*w2
         )
     
-    def _set_initial_guess(self, opti, T_phases, states, controls, 
-                          contact_sequence, jump_task, N_per_phase):
-        """Set initial guess for optimization"""
+    def _set_improved_initial_guess(self, opti, T_phases, states, controls, 
+                                  contact_sequence, jump_task, N_per_phase,
+                                  estimated_flight_time):
+        """Set improved initial guess for optimization"""
         
-        # Initial guess for phase durations
-        T_total_guess = 0.8
         n_phases = len(contact_sequence)
-        for i in range(n_phases):
-            opti.set_initial(T_phases[i], T_total_guess / n_phases)
         
-        # Initial guess for states (linear interpolation)
+        # Better initial guess for phase durations based on contact type
+        phase_types = []
+        initial_durations = []
+        
+        for i, contacts in enumerate(contact_sequence):
+            if sum(contacts) == 4:
+                phase_types.append('stance')
+                initial_durations.append(0.3)  # 300ms for stance
+            elif sum(contacts) == 2:
+                phase_types.append('partial')
+                initial_durations.append(0.15)  # 150ms for partial contact
+            elif sum(contacts) == 0:
+                phase_types.append('flight')
+                initial_durations.append(estimated_flight_time)  # Estimated flight time
+                
+        # Set initial values for phase durations
+        for i in range(n_phases):
+            opti.set_initial(T_phases[i], initial_durations[i])
+        
+        # Calculate phase start times using initial durations
+        phase_start_times = [0]
+        for i in range(n_phases):
+            phase_start_times.append(phase_start_times[-1] + initial_durations[i])
+        
+        # Find flight phase
+        flight_phase_idx = None
+        for i, contacts in enumerate(contact_sequence):
+            if sum(contacts) == 0:
+                flight_phase_idx = i
+                break
+        
+        # Initial guess for states with parabolic trajectory during flight
         N_total = n_phases * N_per_phase
-        for k in range(N_total + 1):
-            alpha = k / N_total
+        k = 0
+        
+        for phase_idx in range(n_phases):
+            t_phase_start = phase_start_times[phase_idx]
+            t_phase_end = phase_start_times[phase_idx + 1]
             
-            # Position: linear interpolation
-            p_guess = (1 - alpha) * jump_task.p_initial + alpha * jump_task.p_final
-            opti.set_initial(states[k]['p'], p_guess)
-            
-            # Velocity: constant
-            v_guess = (jump_task.p_final - jump_task.p_initial) / T_total_guess
-            opti.set_initial(states[k]['v'], v_guess)
-            
-            # Quaternion: identity
-            opti.set_initial(states[k]['q'], [1, 0, 0, 0])
-            
-            # Angular velocity: zero
-            opti.set_initial(states[k]['omega'], [0, 0, 0])
+            for k_local in range(N_per_phase if phase_idx < n_phases - 1 else N_per_phase + 1):
+                if k <= N_total:
+                    t = t_phase_start + k_local * (t_phase_end - t_phase_start) / N_per_phase
+                    
+                    if flight_phase_idx is None or phase_idx < flight_phase_idx:
+                        # Before flight - stay at initial position
+                        p_guess = jump_task.p_initial
+                        v_guess = [0, 0, 0]
+                    elif phase_idx == flight_phase_idx:
+                        # During flight - parabolic trajectory
+                        flight_progress = k_local / N_per_phase
+                        
+                        # Horizontal motion (constant velocity)
+                        v_horizontal = (jump_task.p_final[:2] - jump_task.p_initial[:2]) / estimated_flight_time
+                        p_x = jump_task.p_initial[0] + v_horizontal[0] * flight_progress * estimated_flight_time
+                        p_y = jump_task.p_initial[1] + v_horizontal[1] * flight_progress * estimated_flight_time
+                        
+                        # Vertical motion (parabolic)
+                        t_flight = flight_progress * estimated_flight_time
+                        v0_z = estimated_flight_time * self.robot.gravity / 2  # Initial vertical velocity
+                        p_z = jump_task.p_initial[2] + v0_z * t_flight - 0.5 * self.robot.gravity * t_flight**2
+                        
+                        p_guess = [p_x, p_y, max(p_z, 0.1)]
+                        v_guess = [v_horizontal[0], v_horizontal[1], v0_z - self.robot.gravity * t_flight]
+                    else:
+                        # After flight - at final position
+                        p_guess = jump_task.p_final
+                        v_guess = [0, 0, 0]
+                    
+                    opti.set_initial(states[k]['p'], p_guess)
+                    opti.set_initial(states[k]['v'], v_guess)
+                    opti.set_initial(states[k]['q'], [1, 0, 0, 0])
+                    opti.set_initial(states[k]['omega'], [0, 0, 0])
+                    
+                    k += 1
         
         # Initial guess for forces
-        for k in range(N_total):
-            phase_idx = k // N_per_phase
+        k = 0
+        for phase_idx in range(n_phases):
             contacts = contact_sequence[phase_idx]
             
-            for i, foot_name in enumerate(['FR', 'FL', 'RR', 'RL']):
-                if contacts[i]:
-                    # Distribute weight evenly among contact feet
-                    n_contacts = sum(contacts)
-                    f_z = self.robot.mass * self.robot.gravity / n_contacts
-                    opti.set_initial(controls[k][foot_name], [0, 0, f_z])
-                else:
-                    opti.set_initial(controls[k][foot_name], [0, 0, 0])
+            for k_local in range(N_per_phase):
+                if k < N_total:
+                    for i, foot_name in enumerate(['FR', 'FL', 'RR', 'RL']):
+                        if contacts[i]:
+                            # Distribute weight among contact feet
+                            n_contacts = sum(contacts)
+                            f_z = self.robot.mass * self.robot.gravity / n_contacts
+                            
+                            # Add some forward force during takeoff phase
+                            if flight_phase_idx and phase_idx < flight_phase_idx and k_local > N_per_phase // 2:
+                                f_x = 20.0  # Forward push
+                            else:
+                                f_x = 0
+                                
+                            opti.set_initial(controls[k][foot_name], [f_x, 0, f_z])
+                        else:
+                            opti.set_initial(controls[k][foot_name], [0, 0, 0])
+                    k += 1
     
     def _print_results_summary(self, results):
         """Print optimization results summary"""
@@ -460,13 +571,7 @@ class ContactTimingOptimizer:
         print(f"\nOptimization cost: {results['cost']:.6f}")
     
     def get_reference_trajectory_3xN(self, results):
-        """
-        Get reference trajectory in 3xN format
-        
-        Returns:
-            positions: np.ndarray of shape (3, N) where rows are [x, y, z]
-            times: np.ndarray of shape (N,) with time for each point
-        """
+        """Get reference trajectory in 3xN format"""
         if not results['success']:
             return None, None
         
@@ -476,12 +581,7 @@ class ContactTimingOptimizer:
         return positions, times
     
     def get_contact_events(self, results):
-        """
-        Extract contact event timings
-        
-        Returns:
-            dict with 'takeoff_time', 'landing_time', and other events
-        """
+        """Extract contact event timings"""
         if not results['success']:
             return None
         
@@ -608,136 +708,85 @@ if __name__ == "__main__":
     robot = RobotParams()
     optimizer = ContactTimingOptimizer(robot)
     
-    # # Example 1: Forward jump with takeoff and landing sequence
-    # print("Example 1: Forward Jump with Full Contact Sequence")
-    # jump_task = JumpTask(
-    #     p_initial=np.array([0, 0, 0.33]),
-    #     p_final=np.array([2.0, 0, 0.33])
-    # )
-    
-    # contact_sequence = [
-    #     [1, 1, 1, 1],  # All feet in contact (stance)
-    #     [0, 0, 1, 1],  # Rear feet only (takeoff)
-    #     [0, 0, 0, 0],  # Flight
-    #     [1, 1, 1, 1]   # All feet landing
-    # ]
-    
-    # results = optimizer.optimize_contact_timing(
-    #     contact_sequence=contact_sequence,
-    #     jump_task=jump_task,
-    #     T_bounds=(0.4, 2.0),
-    #     N_per_phase=15
-    # )
-    
-    # if results['success']:
-    #     # Get reference trajectory in 3xN format
-    #     ref_traj_3xN, time_grid = optimizer.get_reference_trajectory_3xN(results)
-        
-    #     print("\n" + "="*50)
-    #     print("REFERENCE TRAJECTORY FOR FULL-BODY OPTIMIZATION")
-    #     print("="*50)
-    #     print(f"\nTrajectory shape: {ref_traj_3xN.shape}")
-    #     print(f"Time grid length: {len(time_grid)}")
-    #     print(f"Time range: [{time_grid[0]:.3f}, {time_grid[-1]:.3f}] seconds")
-        
-    #     # Get contact events
-    #     events = optimizer.get_contact_events(results)
-    #     print("\nKey Contact Events:")
-    #     for event_name, event_time in events.items():
-    #         print(f"  {event_name}: {event_time:.3f} s")
-        
-    #     # Calculate flight duration
-    #     if 'takeoff_time' in events and 'landing_time' in events:
-    #         flight_duration = events['landing_time'] - events['takeoff_time']
-    #         print(f"\nFlight duration: {flight_duration:.3f} s")
-        
-    #     # Save to file if needed
-    #     np.savetxt('reference_trajectory.txt', ref_traj_3xN, 
-    #                fmt='%.6f', header='X, Y, Z positions (each row)')
-    #     print("\nReference trajectory saved to 'reference_trajectory.txt'")
-        
-    #     # Plot results
-    #     optimizer.plot_results(results)
-    
-    # # Example 2: Vertical jump with landing
-    # print("\n\nExample 2: Vertical Jump with Landing")
-    # jump_task_vertical = JumpTask(
-    #     p_initial=np.array([0, 0, 0.3]),
-    #     p_final=np.array([0, 0, 0.3])  # Return to same height
-    # )
-    
-    # contact_sequence_vertical = [
-    #     [1, 1, 1, 1],  # All feet (stance)
-    #     [0, 0, 0, 0],  # Flight
-    #     [1, 1, 1, 1]   # All feet (landing)
-    # ]
-    
-    # results_vertical = optimizer.optimize_contact_timing(
-    #     contact_sequence=contact_sequence_vertical,
-    #     jump_task=jump_task_vertical,
-    #     T_bounds=(0.3, 1.5),
-    #     N_per_phase=20
-    # )
-    
-    # if results_vertical['success']:
-    #     # Get reference trajectory
-    #     ref_traj_vert, time_vert = optimizer.get_reference_trajectory_3xN(results_vertical)
-        
-    #     print("\n" + "="*50)
-    #     print("VERTICAL JUMP REFERENCE TRAJECTORY")
-    #     print("="*50)
-    #     print(f"Trajectory shape: {ref_traj_vert.shape}")
-        
-    #     # Get contact events
-    #     events_vert = optimizer.get_contact_events(results_vertical)
-    #     print("\nContact Events:")
-    #     print(f"  Takeoff: {events_vert.get('takeoff_time', 'N/A'):.3f} s")
-    #     print(f"  Landing: {events_vert.get('landing_time', 'N/A'):.3f} s")
-    #     print(f"  Flight duration: {events_vert.get('landing_time', 0) - events_vert.get('takeoff_time', 0):.3f} s")
-        
-    #     optimizer.plot_results(results_vertical)
-    
-    # Example 3: Complex jump with asymmetric landing
-    print("\n\nExample 3: Diagonal Jump with Staggered Landing")
-    jump_task_complex = JumpTask(
+    # Example: Forward jump with proper contact sequence
+    print("Forward Jump with Optimized Contact Timing")
+    jump_task = JumpTask(
         p_initial=np.array([0, 0, 0.33]),
-        p_final=np.array([2.0, 0, 0.33])  # Diagonal jump
+        p_final=np.array([2.0, 0, 0.33])
     )
     
-    contact_sequence_complex = [
-        [1, 1, 1, 1],  # All feet (stance)
-        [0, 0, 1, 1],  # Rear feet only (takeoff prep)
+    contact_sequence = [
+        [1, 1, 1, 1],  # All feet (stance) - preparation
+        [0, 0, 1, 1],  # Rear feet only (takeoff)
         [0, 0, 0, 0],  # Flight
         [1, 1, 0, 0],  # Front feet land first
         [1, 1, 1, 1]   # All feet (full landing)
     ]
     
-    results_complex = optimizer.optimize_contact_timing(
-        contact_sequence=contact_sequence_complex,
-        jump_task=jump_task_complex,
-        T_bounds=(0.5, 2.5),
+    results = optimizer.optimize_contact_timing(
+        contact_sequence=contact_sequence,
+        jump_task=jump_task,
+        T_bounds=(0.8, 2.5),
         N_per_phase=12
     )
     
-    if results_complex['success']:
-        print("\n" + "="*50)
-        print("COMPLEX JUMP TRAJECTORY")
-        print("="*50)
+    if results['success']:
+        # Get reference trajectory in 3xN format
+        ref_traj_3xN, time_grid = optimizer.get_reference_trajectory_3xN(results)
         
-        # Show detailed phase breakdown
-        print("\nDetailed Phase Breakdown:")
+        print("\n" + "="*50)
+        print("REFERENCE TRAJECTORY FOR FULL-BODY OPTIMIZATION")
+        print("="*50)
+        print(f"\nTrajectory shape: {ref_traj_3xN.shape}")
+        print(f"Time grid length: {len(time_grid)}")
+        print(f"Time range: [{time_grid[0]:.3f}, {time_grid[-1]:.3f}] seconds")
+        
+        # Get contact events
+        events = optimizer.get_contact_events(results)
+        print("\nKey Contact Events:")
+        for event_name, event_time in events.items():
+            print(f"  {event_name}: {event_time:.3f} s")
+        
+        # Calculate flight duration
+        if 'takeoff_time' in events and 'landing_time' in events:
+            flight_duration = events['landing_time'] - events['takeoff_time']
+            print(f"\nFlight duration: {flight_duration:.3f} s")
+        
+        # Show phase timing breakdown
+        print("\n" + "="*50)
+        print("DETAILED PHASE TIMING ANALYSIS")
+        print("="*50)
         cumulative_time = 0.0
-        for i, (duration, contacts) in enumerate(zip(results_complex['phase_durations'], 
-                                                     results_complex['contact_sequence'])):
+        for i, (duration, contacts) in enumerate(zip(results['phase_durations'], 
+                                                     results['contact_sequence'])):
             contact_str = ['FR', 'FL', 'RR', 'RL']
             active_feet = [contact_str[j] for j, c in enumerate(contacts) if c]
             if not active_feet:
                 active_feet = ['FLIGHT']
             
-            print(f"  Phase {i+1}: t=[{cumulative_time:.3f}, {cumulative_time + duration:.3f}]s")
-            print(f"           Duration: {duration*1000:.1f}ms")
-            print(f"           Active feet: {', '.join(active_feet)}")
+            percentage = (duration / results['total_time']) * 100
+            
+            print(f"\nPhase {i+1}:")
+            print(f"  Time interval: [{cumulative_time:.3f}, {cumulative_time + duration:.3f}] s")
+            print(f"  Duration: {duration*1000:.1f} ms ({percentage:.1f}% of total)")
+            print(f"  Active feet: {', '.join(active_feet)}")
+            
+            # Phase-specific analysis
+            if sum(contacts) == 0:  # Flight phase
+                # Calculate max height during this phase
+                phase_start_idx = int(cumulative_time / results['total_time'] * len(time_grid))
+                phase_end_idx = int((cumulative_time + duration) / results['total_time'] * len(time_grid))
+                phase_positions = ref_traj_3xN[:, phase_start_idx:phase_end_idx]
+                if phase_positions.size > 0:
+                    max_flight_height = np.max(phase_positions[2, :])
+                    print(f"  Max height during flight: {max_flight_height:.3f} m")
             
             cumulative_time += duration
         
-        optimizer.plot_results(results_complex)
+        # Save to file
+        np.savetxt('reference_trajectory.txt', ref_traj_3xN, 
+                   fmt='%.6f', header='X, Y, Z positions (each row)')
+        print("\nReference trajectory saved to 'reference_trajectory.txt'")
+        
+        # Plot results
+        optimizer.plot_results(results)

@@ -49,13 +49,13 @@ class TrajectoryOptimization:
                  log_level: str = "info",
                  visualize: bool = False,
                 #  dt: float = 0.02,
-                 knee_clearance: float = 0.08,
+                 knee_clearance: float = 0.01,
                  robot_description: str = "go2_description",
-                 mu: float = 0.8,
+                 mu: float = 0.4,
                  stance1_end_fraction: float = 0.25,
                  takeoff_end_fraction: float = 0.35,
                  flight_end_fraction: float = 0.75,
-                 joint_position_weight: float = 1.0,
+                 joint_position_weight: float = 1.5,
                  velocity_weight: float = 1.0,
                  torque_weight: float = 0.01,
                  force_weight: float = 0.001,
@@ -76,19 +76,19 @@ class TrajectoryOptimization:
         self.torque_weight = torque_weight
         self.force_weight = force_weight
         self.max_iterations = max_iterations
-        self.dt_c = 0.02 #self.T_jump / ((stance1_end_fraction + 4*(flight_end_fraction-stance1_end_fraction) + (1-flight_end_fraction)) * num_steps) #0.025  # contact phase dt
-        self.dt_f = 0.02 # * self.dt_c # Flight phase dt
+        self.dt_c = 0.04 #self.T_jump / ((stance1_end_fraction + 4*(flight_end_fraction-stance1_end_fraction) + (1-flight_end_fraction)) * num_steps) #0.025  # contact phase dt
+        self.dt_f = 0.04 # * self.dt_c # Flight phase dt
 
-        self.T_stance = 0.44
+        self.T_stance = 0.60
         self.stance_steps = int(self.T_stance / self.dt_c)  # Number of steps in stance phase
 
-        self.T_take_off = 0.18
+        self.T_take_off = 0.40
         self.take_off_steps = int(self.T_take_off / self.dt_c)  # Number of steps in take-off phase
 
-        self.T_flight = 0.8
+        self.T_flight = .72 #0.68
         self.flight_steps = int(self.T_flight / self.dt_f)  # Number of steps in flight phase
 
-        self.T_landing = 0.44
+        self.T_landing = 0.32
         self.landing_steps = int(self.T_landing / self.dt_c)  # Number of steps in landing phase
 
 
@@ -260,9 +260,9 @@ class TrajectoryOptimization:
         self.logger.debug(f"optimization variable shapes: q_opt: {q_opt.shape}, v_opt: {v_opt.shape}, tau_opt: {tau_opt.shape}, f_opt: {f_opt.shape}")
 
         # Initial and final configurations
-        q_initial = np.array([0.0, 0, 0.33, 0, 0, 0, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
+        q_initial = np.array([1.5, 0, 0.33, 0, 0, 0, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
         v_initial = np.zeros(self.model.nv)
-        q_final = np.array([2.0, 0, 0.33, 0, 0, 0, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
+        q_final = np.array([0, 0, 0.33, 0, 2*np.pi, 0, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
         v_final = np.zeros(self.model.nv)
 
         # Boundary conditions
@@ -277,16 +277,16 @@ class TrajectoryOptimization:
         for t in range(self.num_steps):
             opti.subject_to(tau_opt[:6, t] == 0)
         
-        tau_ub = 45
-        tau_lb = -45
-        joint_ub = np.array([0.01, 1.4, 0.0] * 4)
-        joint_lb = np.array([-0.01, -1, -2.8] * 4)
+        # tau_ub = 100
+        # tau_lb = -100
+        # joint_ub = np.array([1, 1.5, 0.5] * 4)
+        # joint_lb = np.array([-1, -1.5, -3.0] * 4)
 
-        for t in range(self.num_steps):
-            opti.subject_to(q_opt[6:, t] <= joint_ub)
-            opti.subject_to(q_opt[6:, t] >= joint_lb)
-            opti.subject_to(tau_opt[6:,t] <= tau_ub)
-            opti.subject_to(tau_opt[6:,t] >= tau_lb)
+        # for t in range(self.num_steps):
+        #     opti.subject_to(q_opt[6:, t] <= joint_ub)
+        #     opti.subject_to(q_opt[6:, t] >= joint_lb)
+        #     opti.subject_to(tau_opt[6:,t] <= tau_ub)
+        #     opti.subject_to(tau_opt[6:,t] >= tau_lb)
 
         # Stance 1 constraints
         self.logger.info(f"Adding stance phase constraints.")
@@ -406,7 +406,8 @@ class TrajectoryOptimization:
         self.logger.info("Adding cost function")
         total_cost = 0.0
         for t in range(self.num_steps):
-            total_cost += casadi.sumsqr(q_opt[6:, t] - q_initial[6:]) * self.joint_position_weight
+            total_cost += casadi.sumsqr(q_opt[:6, t]) * self.joint_position_weight
+            total_cost += casadi.sumsqr(q_opt[6:, t]) * (self.joint_position_weight-0.5)
             total_cost += casadi.sumsqr(v_opt[:, t]) * self.velocity_weight
             total_cost += casadi.sumsqr(tau_opt[:, t]) * self.torque_weight
             total_cost += casadi.sumsqr(f_opt[:, t]) * self.force_weight

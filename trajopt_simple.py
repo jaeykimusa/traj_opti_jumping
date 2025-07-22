@@ -16,6 +16,8 @@ from typing import Union, List, Optional
 import numpy as np
 import rerun as rr
 from scipy.spatial.transform import Rotation as R
+import matplotlib.pyplot as plt
+
 
 
 class TrajectoryOptimization:
@@ -46,28 +48,27 @@ class TrajectoryOptimization:
     def __init__(self, 
                  log_level: str = "info",
                  visualize: bool = False,
-                 num_steps: int = 30,
-                 dt: float = 0.02,
+                #  dt: float = 0.02,
                  knee_clearance: float = 0.08,
                  robot_description: str = "go2_description",
-                 friction_coefficient: float = 0.8,
-                 stance1_end_fraction: float = 0.3,
-                 flight_end_fraction: float = 0.7,
-                 joint_position_weight: float = 30.0,
-                 velocity_weight: float = 10.0,
-                 torque_weight: float = 1.0,
-                 force_weight: float = 0.1,
+                 mu: float = 0.8,
+                 stance1_end_fraction: float = 0.25,
+                 takeoff_end_fraction: float = 0.35,
+                 flight_end_fraction: float = 0.75,
+                 joint_position_weight: float = 1.0,
+                 velocity_weight: float = 1.0,
+                 torque_weight: float = 0.01,
+                 force_weight: float = 0.001,
                  max_iterations: int = 10000,
                  contact_sequence: List[List[int]] = None):
         
         # Configuration parameters
         self.log_level = log_level
         self.visualize = visualize
-        self.num_steps = num_steps
-        self.dt = dt
+        # self.dt = dt
         self.knee_clearance = knee_clearance
         self.robot_description = robot_description
-        self.friction_coefficient = friction_coefficient
+        self.mu = mu
         self.stance1_end_fraction = stance1_end_fraction
         self.flight_end_fraction = flight_end_fraction
         self.joint_position_weight = joint_position_weight
@@ -75,10 +76,31 @@ class TrajectoryOptimization:
         self.torque_weight = torque_weight
         self.force_weight = force_weight
         self.max_iterations = max_iterations
-        self.dt_c = 0.025  # contact phase dt
-        self.dt_f = 0.1 # Flight phase dt
+        self.dt_c = 0.02 #self.T_jump / ((stance1_end_fraction + 4*(flight_end_fraction-stance1_end_fraction) + (1-flight_end_fraction)) * num_steps) #0.025  # contact phase dt
+        self.dt_f = 0.02 # * self.dt_c # Flight phase dt
+
+        self.T_stance = 0.66
+        self.stance_steps = int(self.T_stance / self.dt_c)  # Number of steps in stance phase
+
+        self.T_take_off = 0.16
+        self.take_off_steps = int(self.T_take_off / self.dt_c)  # Number of steps in take-off phase
+
+        self.T_flight = 0.68
+        self.flight_steps = int(self.T_flight / self.dt_f)  # Number of steps in flight phase
+
+        self.T_landing = 0.26
+        self.landing_steps = int(self.T_landing / self.dt_c)  # Number of steps in landing phase
+
+
+        self.num_steps = self.stance_steps + self.take_off_steps + self.flight_steps + self.landing_steps  # Total number of steps
+        self.T_jump = self.T_stance + self.T_take_off + self.T_flight + self.T_landing # 1.86 sec
+    
+        self.contact_sequence = contact_sequence
+
         # self.contact_sequence = contact_sequence 
-        
+        # print(self.dt_c)
+        # print(self.dt_f)
+        # exit()
         # Initialize logger and internal state
         self.logger = get_logger("trajopt", stdout_level=self.log_level)
         self.model = None
@@ -229,27 +251,20 @@ class TrajectoryOptimization:
         # num_phases = len(self.contact_sequence)
 
         # Decision variables
-        q_opt = opti.variable(self.model.nq, self.num_steps + 1)
-        v_opt = opti.variable(self.model.nv, self.num_steps + 1)
-        tau_opt = opti.variable(self.model.nv, self.num_steps + 1)
-        f_opt = opti.variable(12, self.num_steps + 1)
-        t_opt = opti.variable()
+        q_opt = opti.variable(self.model.nq, self.num_steps)
+        v_opt = opti.variable(self.model.nv, self.num_steps)
+        tau_opt = opti.variable(self.model.nv, self.num_steps)
+        f_opt = opti.variable(12, self.num_steps)
+        # t_opt = opti.variable()
         
         self.logger.debug(f"optimization variable shapes: q_opt: {q_opt.shape}, v_opt: {v_opt.shape}, tau_opt: {tau_opt.shape}, f_opt: {f_opt.shape}")
 
         # Initial and final configurations
         q_initial = np.array([0.0, 0, 0.33, 0, 0, 0, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
         v_initial = np.zeros(self.model.nv)
-        q_final = np.array([1.5, 0, 0.33, 0, 0, 0, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
+        q_final = np.array([2.0, 0, 0.33, 0, 0, 0, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
         v_final = np.zeros(self.model.nv)
 
-        # Dynamics constraints
-        self.logger.info("Adding dynamics constraints")
-        for t in range(self.num_steps):
-            dt = self.dt
-            opti.subject_to(q_opt[:, t + 1] == q_opt[:, t] + v_opt[:, t] * dt)  # integrate position
-            opti.subject_to(v_opt[:, t + 1] == v_opt[:, t] + self.fn_fd(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) * dt)  # integrate velocity
-        
         # Boundary conditions
         self.logger.info("Adding boundary conditions")
         opti.subject_to(q_opt[:, 0] == q_initial)
@@ -261,27 +276,30 @@ class TrajectoryOptimization:
         self.logger.info("Adding no base actuation constraints")
         for t in range(self.num_steps):
             opti.subject_to(tau_opt[:6, t] == 0)
+        
+        tau_ub = 45
+        tau_lb = -45
+        joint_ub = np.array([0.01, 1.4, 0.0] * 4)
+        joint_lb = np.array([-0.01, -1, -2.8] * 4)
 
-        # Phase definitions
-        stance1_start = int(0)
-        stance1_end = int(0.3 * self.num_steps)
-        flight_start = int(stance1_end)
-        flight_end = int(0.7 * self.num_steps)
-        stance2_start = int(flight_end)
-        stance2_end = int(self.num_steps) + 1
+        for t in range(self.num_steps):
+            opti.subject_to(q_opt[6:, t] <= joint_ub)
+            opti.subject_to(q_opt[6:, t] >= joint_lb)
+            opti.subject_to(tau_opt[6:,t] <= tau_ub)
+            opti.subject_to(tau_opt[6:,t] >= tau_lb)
 
         # Stance 1 constraints
-        self.logger.info(f"Adding stance 1 friction cone constraints: mu = {self.friction_coefficient}")
-        for t in range(stance1_start, stance1_end):
+        self.logger.info(f"Adding stance phase constraints.")
+        for t in range(0, self.stance_steps):
             for i in range(4):
                 fx = f_opt[3*i, t]
                 fy = f_opt[3*i+1, t]
                 fz = f_opt[3*i+2, t]
                 opti.subject_to(fz >= 0)
-                opti.subject_to(fx <= self.friction_coefficient * fz)
-                opti.subject_to(fx >= -self.friction_coefficient * fz)
-                opti.subject_to(fy <= self.friction_coefficient * fz)
-                opti.subject_to(fy >= -self.friction_coefficient * fz)
+                opti.subject_to(fx <= self.mu * fz)
+                opti.subject_to(fx >= -self.mu * fz)
+                opti.subject_to(fy <= self.mu * fz)
+                opti.subject_to(fy >= -self.mu * fz)
 
             # Fixed foot positions during stance
             initial_fk = self.forward_kinematics(self.model, self.data, q_initial)
@@ -290,9 +308,51 @@ class TrajectoryOptimization:
             opti.subject_to(self.fn_fk_rf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.rf_pos)
             opti.subject_to(self.fn_fk_rh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.rh_pos)
 
+            opti.subject_to(q_opt[:, t + 1] == q_opt[:, t] + v_opt[:, t] * self.dt_c)  # integrate position
+            opti.subject_to(v_opt[:, t + 1] == v_opt[:, t] + self.fn_fd(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) * self.dt_c)  # integrate velocity
+
+
+        self.logger.info(f"Adding take-off phase constraints. ")
+        for t in range(self.stance_steps, self.stance_steps+self.take_off_steps):
+            for i in range(0,4):
+                if i % 2 == 0:  # front foot
+                    fx = f_opt[3*i, t]
+                    fy = f_opt[3*i+1, t]
+                    fz = f_opt[3*i+2, t]
+                    opti.subject_to(fx == 0)
+                    opti.subject_to(fy == 0)
+                    opti.subject_to(fz == 0)
+                else:
+                    # rear foot
+                    fx = f_opt[3*i, t]
+                    fy = f_opt[3*i+1, t]
+                    fz = f_opt[3*i+2, t]
+                    opti.subject_to(fz >= 0)
+                    opti.subject_to(fx <= self.mu * fz)
+                    opti.subject_to(fx >= -self.mu * fz)
+                    opti.subject_to(fy <= self.mu * fz)
+                    opti.subject_to(fy >= -self.mu * fz)
+
+            # Fixed foot positions during stance
+            initial_fk = self.forward_kinematics(self.model, self.data, q_initial)
+            opti.subject_to(self.fn_fk_lf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.lf_pos)
+            opti.subject_to(self.fn_fk_lh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.lh_pos)
+            opti.subject_to(self.fn_fk_rf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.rf_pos)
+            opti.subject_to(self.fn_fk_rh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.rh_pos)
+
+            # Knee clearance constraints
+            opti.subject_to(self.fn_fk_lf_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > self.knee_clearance)
+            opti.subject_to(self.fn_fk_lh_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > self.knee_clearance)
+            opti.subject_to(self.fn_fk_rf_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > self.knee_clearance)
+            opti.subject_to(self.fn_fk_rh_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > self.knee_clearance)
+
+            opti.subject_to(q_opt[:, t + 1] == q_opt[:, t] + v_opt[:, t] * self.dt_c)  # integrate position
+            opti.subject_to(v_opt[:, t + 1] == v_opt[:, t] + self.fn_fd(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) * self.dt_c)  # integrate velocity
+
+
         # Flight phase constraints
-        self.logger.info("Adding flight phase constraints")
-        for t in range(flight_start, flight_end):
+        self.logger.info("Adding flight phase constraints.")
+        for t in range(self.stance_steps+self.take_off_steps, self.stance_steps+self.take_off_steps+self.flight_steps):
             for i in range(4):
                 fx = f_opt[3*i, t]
                 fy = f_opt[3*i+1, t]
@@ -301,10 +361,19 @@ class TrajectoryOptimization:
                 opti.subject_to(fy == 0)
                 opti.subject_to(fz == 0)
 
-        # Stance 2 constraints
-        self.logger.info(f"Adding stance 2 friction cone constraints: mu = {self.friction_coefficient}")
-        for t in range(stance2_start, stance2_end):
-            if t == stance2_end - 1:
+            # Knee clearance constraints
+            opti.subject_to(self.fn_fk_lf_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > self.knee_clearance)
+            opti.subject_to(self.fn_fk_lh_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > self.knee_clearance)
+            opti.subject_to(self.fn_fk_rf_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > self.knee_clearance)
+            opti.subject_to(self.fn_fk_rh_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > self.knee_clearance)
+
+            opti.subject_to(q_opt[:, t + 1] == q_opt[:, t] + v_opt[:, t] * self.dt_f)  # integrate position
+            opti.subject_to(v_opt[:, t + 1] == v_opt[:, t] + self.fn_fd(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) * self.dt_f)  # integrate velocity
+
+        # Landing phase constraints
+        self.logger.info(f"Adding landing phase constraints.")
+        for t in range(self.stance_steps+self.take_off_steps+self.flight_steps, self.num_steps):
+            if t == self.num_steps - 1:
                 continue
                 
             for i in range(4):
@@ -312,10 +381,10 @@ class TrajectoryOptimization:
                 fy = f_opt[3*i+1, t]
                 fz = f_opt[3*i+2, t]
                 opti.subject_to(fz >= 0)
-                opti.subject_to(fx <= self.friction_coefficient * fz)
-                opti.subject_to(fx >= -self.friction_coefficient * fz)
-                opti.subject_to(fy <= self.friction_coefficient * fz)
-                opti.subject_to(fy >= -self.friction_coefficient * fz)
+                opti.subject_to(fx <= self.mu * fz)
+                opti.subject_to(fx >= -self.mu * fz)
+                opti.subject_to(fy <= self.mu * fz)
+                opti.subject_to(fy >= -self.mu * fz)
             
             # Fixed foot positions during stance
             final_fk = self.forward_kinematics(self.model, self.data, q_final)
@@ -330,11 +399,15 @@ class TrajectoryOptimization:
             opti.subject_to(self.fn_fk_rf_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > self.knee_clearance)
             opti.subject_to(self.fn_fk_rh_knee(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t])[2] > self.knee_clearance)
 
+            opti.subject_to(q_opt[:, t + 1] == q_opt[:, t] + v_opt[:, t] * self.dt_c)  # integrate position
+            opti.subject_to(v_opt[:, t + 1] == v_opt[:, t] + self.fn_fd(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) * self.dt_c)  # integrate velocity
+
         # Cost function
         self.logger.info("Adding cost function")
         total_cost = 0.0
         for t in range(self.num_steps):
-            total_cost += casadi.sumsqr(q_opt[6:, t] - q_initial[6:]) * self.joint_position_weight
+            # total_cost += casadi.sumsqr(q_opt[6:, t] - q_initial[6:]) * self.joint_position_weight
+            total_cost += casadi.sumsqr(q_opt[:, t]) * self.joint_position_weight
             total_cost += casadi.sumsqr(v_opt[:, t]) * self.velocity_weight
             total_cost += casadi.sumsqr(tau_opt[:, t]) * self.torque_weight
             total_cost += casadi.sumsqr(f_opt[:, t]) * self.force_weight
@@ -380,7 +453,7 @@ class TrajectoryOptimization:
             self.logger.info("Visualization disabled")
             return
 
-        t_start = 0.0
+        time = 0.0
         self.logger.info("Creating robot logger")
         robot_logger = RobotLogger.from_zoo(self.robot_description)
         self.logger.info("Visualizing optimization solution")
@@ -389,7 +462,7 @@ class TrajectoryOptimization:
         self.logger.info("Logging robot states")
         q_traj = self.solution['q']
         
-        for i in range(self.num_steps + 1):
+        for i in range(self.num_steps):
             q_i = q_traj[:, i]
             base_position = q_i[:3]
             base_orientation = R.from_euler("zyx", q_i[3:6], degrees=False).as_quat(scalar_first=False)
@@ -408,13 +481,38 @@ class TrajectoryOptimization:
                 "RR_thigh_joint": q_i[16],
                 "RR_calf_joint": q_i[17],
             }
-
-            robot_logger.log_state(
-                logtime=t_start + i * self.dt,
-                base_position=base_position,
-                base_orientation=base_orientation,
-                joint_positions=joint_positions
-            )
+            if 0 <= i < self.stance_steps:
+                time += self.dt_c
+                robot_logger.log_state(
+                    logtime=time,
+                    base_position=base_position,
+                    base_orientation=base_orientation,
+                    joint_positions=joint_positions
+                )
+            elif self.stance_steps <= i < self.stance_steps+self.take_off_steps:
+                time += self.dt_c
+                robot_logger.log_state(
+                    logtime=time,
+                    base_position=base_position,
+                    base_orientation=base_orientation,
+                    joint_positions=joint_positions
+                )
+            elif self.stance_steps+self.take_off_steps <= i < self.stance_steps+self.take_off_steps+self.flight_steps:
+                time += self.dt_f
+                robot_logger.log_state(
+                    logtime=time,
+                    base_position=base_position,
+                    base_orientation=base_orientation,
+                    joint_positions=joint_positions
+                )
+            else:
+                time += self.dt_c
+                robot_logger.log_state(
+                    logtime=time,
+                    base_position=base_position,
+                    base_orientation=base_orientation,
+                    joint_positions=joint_positions
+                )
 
     def get_solution(self):
         """Get the optimization solution"""
@@ -431,8 +529,82 @@ class TrajectoryOptimization:
         self.v_final = v_final if v_final is not None else np.zeros(len(q_final) - 1)
 
 
+    def plots(self):
+        fig, axs = plt.subplots(4, 3, figsize=(15, 8))  # Wider layout
+        axs = axs.flatten()
+        
+        q = self.solution['q']
+        v = self.solution['v']
+        tau = self.solution['tau']
+        f = self.solution['f']
+
+        com_x = q[0,:]
+        com_z = q[2,:]
+        axs[0].plot(com_x, com_z, label="com")
+        axs[0].set_title("com position ")
+        axs[0].legend()
+        axs[0].set_xlabel("x (m)")
+        axs[0].set_ylabel("z (m)")
+
+        axs[1].plot(q[3,:], label="phi")
+        axs[1].set_title("pitch angle")
+        axs[1].legend()
+        axs[1].set_xlabel("N")
+        axs[1].set_ylabel("Angle (rad)")
+        
+        axs[2].plot(v[0,:], label="v_x")
+        axs[2].set_title("v_x")
+        axs[2].legend()
+        axs[2].set_xlabel("N")
+        axs[2].set_ylabel("v_x (m/s)")
+
+        axs[3].plot(v[2,:], label="v_z")
+        axs[3].set_title("v_z")
+        axs[3].legend()
+        axs[3].set_xlabel("N")
+        axs[3].set_ylabel("v_z (m/s)")
+
+        axs[4].plot(q[7,:], label="thigh")
+        axs[4].plot(q[8,:], label="calf")
+        axs[4].set_title("Joint angle tracking for front leg")
+        axs[4].legend()
+        axs[4].set_xlabel("N")
+        axs[4].set_ylabel("Angle (rad)")
+
+        axs[5].plot(q[10,:], label="thigh")
+        axs[5].plot(q[11,:], label="calf")
+        axs[5].set_title("Joint angle tracking for rear leg")
+        axs[5].legend()
+        axs[5].set_xlabel("N")
+        axs[5].set_ylabel("Angle (rad)")
+
+        axs[6].plot(f[0,:], label="F_x")
+        axs[6].plot(f[2,:], label="F_z")
+        axs[6].set_title("Ground reaction force on front leg")
+        axs[6].legend()
+        axs[6].set_xlabel("N")
+        axs[6].set_ylabel("F (N)")
+
+        axs[7].plot(f[3,:], label="F_x")
+        axs[7].plot(f[5,:], label="F_z")
+        axs[7].set_title("Ground reaction force on rear leg")
+        axs[7].legend()
+        axs[7].set_xlabel("N")
+        axs[7].set_ylabel("F (N)")
+
+        plt.tight_layout()
+        plt.show()
+
+
 if __name__ == "__main__":
-    
+
+    contact_sequence = [
+        [1, 1, 1, 1],  # stance
+        [0, 0, 1, 1],  # take off
+        [0, 0, 0, 0],  # flight
+        [1, 1, 1, 1],  # landing
+    ]
+
     trajopt = TrajectoryOptimization(
         visualize=True,
         # num_steps=30,
@@ -445,3 +617,5 @@ if __name__ == "__main__":
         print("Trajectory optimization completed successfully!")
     else:
         print("Trajectory optimization failed!")
+    
+    trajopt.plots()

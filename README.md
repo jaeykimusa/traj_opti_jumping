@@ -4,6 +4,11 @@ Developing the first baseline of trajectory optimization for jumping controller.
 
 PROGRESS:
 
+7/24/2025
+- Poster completed
+- TODO:
+  - have a clean completed code.
+
 7/13/2025
 - .
 - TODO:

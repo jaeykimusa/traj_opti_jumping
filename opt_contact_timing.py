@@ -9,11 +9,15 @@ import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from typing import List, Tuple, Dict
 import math
+import time
 
 @dataclass
 class RobotParams:
-    """Robot parameters for A1 quadruped"""
-    mass: float = 12.0  # kg
+    """Robot parameters for Go2 quadruped"""
+    mass: float = 15.0  # kg
+    body_length: float = 0.71  # m
+    body_width: float = 0.31  # m
+    body_height: float = 0.40  # m
     gravity: float = 9.81  # m/s^2
     inertia: np.ndarray = None  # Body inertia tensor
     mu: float = 0.6  # Friction coefficient
@@ -22,8 +26,13 @@ class RobotParams:
     
     def __post_init__(self):
         if self.inertia is None:
-            # Default inertia for A1 robot
-            self.inertia = np.diag([0.5, 0.8, 0.6])
+            # Default inertia for Go2 robot
+            def inertia_of_cuboid(self, mass, length, width, height):
+                I_xx = (1/12) * mass * (height**2 + width**2)
+                I_yy = (1/12) * mass * (length**2 + height**2)
+                I_zz = (1/12) * mass * (length**2 + width**2)
+                return np.diag([I_xx, I_yy, I_zz])
+            self.inertia = inertia_of_cuboid(self, self.mass, self.body_length, self.body_width, self.body_height)
 
 @dataclass
 class JumpTask:
@@ -44,8 +53,8 @@ class ContactTimingOptimizer:
     Implements contact timing optimization using simplified rigid body dynamics
     """
     
-    def __init__(self, robot_params: RobotParams):
-        self.robot = robot_params
+    def __init__(self):
+        self.robot = RobotParams()
         
         # Foot positions in body frame (A1 robot)
         self.r_foot_body = {
@@ -89,7 +98,7 @@ class ContactTimingOptimizer:
             t_up = np.sqrt(2 * jump_height / self.robot.gravity)
             t_flight = max(t_flight, 2 * t_up)
         
-        return np.clip(t_flight, 0.3, 1.5)  # Reasonable bounds
+        return np.clip(t_flight, 0.3, 2.0)  # Reasonable bounds
     
     def optimize_contact_timing(self, 
                               contact_sequence: List[List[int]], 
@@ -120,11 +129,11 @@ class ContactTimingOptimizer:
             
             # Set phase-specific bounds based on contact type
             if sum(contact_sequence[i]) == 4:  # Full contact (stance/landing)
-                opti.subject_to(0.1 <= T_i)   # Min 100ms
-                opti.subject_to(T_i <= 0.5)    # Max 500ms
-            elif sum(contact_sequence[i]) == 2:  # Partial contact (rear feet)
+                opti.subject_to(0.1 <= T_i)    # Min 100ms
+                opti.subject_to(T_i <= 0.3)    # Max 500ms
+            elif sum(contact_sequence[i]) == 2:# Partial contact (rear feet)
                 opti.subject_to(0.05 <= T_i)   # Min 50ms
-                opti.subject_to(T_i <= 0.3)    # Max 300ms
+                opti.subject_to(T_i <= 0.15)    # Max 300ms
             elif sum(contact_sequence[i]) == 0:  # Flight
                 opti.subject_to(0.2 <= T_i)    # Min 200ms for flight
                 opti.subject_to(T_i <= 1.5)    # Max 1.5s
@@ -383,8 +392,8 @@ class ContactTimingOptimizer:
         n_phases = len(contact_sequence)
         
         # Better initial guess for phase durations based on contact type
-        phase_types = []
-        initial_durations = []
+        phase_types = [] 
+        initial_durations = [] 
         
         for i, contacts in enumerate(contact_sequence):
             if sum(contacts) == 4:
@@ -673,6 +682,9 @@ class ContactTimingOptimizer:
         ax.set_xlabel('X (m)')
         ax.set_ylabel('Y (m)')
         ax.set_zlabel('Z (m)')
+        ax.set_xlim([-1, 3])
+        ax.set_ylim([-2, 2])
+        ax.set_zlim([0, 4])
         ax.legend()
         
         # Contact schedule
@@ -705,8 +717,10 @@ class ContactTimingOptimizer:
 # Example usage
 if __name__ == "__main__":
     # Initialize robot parameters
-    robot = RobotParams()
-    optimizer = ContactTimingOptimizer(robot)
+    # robot = RobotParams()
+    start_time = time.perf_counter()
+
+    optimizer = ContactTimingOptimizer()
     
     # Example: Forward jump with proper contact sequence
     print("Forward Jump with Optimized Contact Timing")
@@ -719,7 +733,7 @@ if __name__ == "__main__":
         [1, 1, 1, 1],  # All feet (stance) - preparation
         [0, 0, 1, 1],  # Rear feet only (takeoff)
         [0, 0, 0, 0],  # Flight
-        [1, 1, 0, 0],  # Front feet land first
+        # [1, 1, 0, 0],  # Front feet land first
         [1, 1, 1, 1]   # All feet (full landing)
     ]
     
@@ -731,6 +745,11 @@ if __name__ == "__main__":
     )
     
     if results['success']:
+
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+
+        print(f"Optimization time: {elapsed_time:.6f} seconds")
         # Get reference trajectory in 3xN format
         ref_traj_3xN, time_grid = optimizer.get_reference_trajectory_3xN(results)
         
@@ -783,10 +802,12 @@ if __name__ == "__main__":
             
             cumulative_time += duration
         
-        # Save to file
-        np.savetxt('reference_trajectory.txt', ref_traj_3xN, 
-                   fmt='%.6f', header='X, Y, Z positions (each row)')
-        print("\nReference trajectory saved to 'reference_trajectory.txt'")
+        # # Save to file
+        # np.savetxt('reference_trajectory.txt', ref_traj_3xN, 
+        #            fmt='%.6f', header='X, Y, Z positions (each row)')
+        # print("\nReference trajectory saved to 'reference_trajectory.txt'")
         
         # Plot results
         optimizer.plot_results(results)
+
+

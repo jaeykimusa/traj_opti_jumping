@@ -17,7 +17,7 @@ import numpy as np
 import rerun as rr
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
-
+import pickle
 
 
 class TrajectoryOptimization:
@@ -27,7 +27,7 @@ class TrajectoryOptimization:
     class ForwardKinematicsResult:
         com_pos: Union[np.ndarray, casadi.SX]
         lf_pos: Union[np.ndarray, casadi.SX]
-        lh_pos: Union[np.ndarray, casadi.SX]
+        lh_pos: Union[np.ndarray, casadi.SX]  
         rf_pos: Union[np.ndarray, casadi.SX]
         rh_pos: Union[np.ndarray, casadi.SX]
         lf_knee_pos: Union[np.ndarray, casadi.SX]
@@ -82,7 +82,7 @@ class TrajectoryOptimization:
         self.T_stance = 0.66
         self.stance_steps = int(self.T_stance / self.dt_c)  # Number of steps in stance phase
 
-        self.T_take_off = 0.16
+        self.T_take_off = 0.20
         self.take_off_steps = int(self.T_take_off / self.dt_c)  # Number of steps in take-off phase
 
         self.T_flight = 0.68
@@ -262,7 +262,8 @@ class TrajectoryOptimization:
         # Initial and final configurations
         q_initial = np.array([0.0, 0, 0.33, 0, 0, 0, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
         v_initial = np.zeros(self.model.nv)
-        q_final = np.array([2.0, 0, 0.33, 0, 0, 0, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
+        # q_final = np.array([1.5, -0.75, 0.33, -0.46364, 0, 0, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
+        q_final = np.array([1.5, 0, 0.33, 0, 0, 0, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
         v_final = np.zeros(self.model.nv)
 
         # Boundary conditions
@@ -596,6 +597,16 @@ class TrajectoryOptimization:
         plt.show()
 
 
+    def save_solution_as_txt(self, directory="solution_txt"):
+        import os
+        os.makedirs(directory, exist_ok=True)
+
+        for key in ['q', 'v', 'tau', 'f']:
+            filepath = os.path.join(directory, f"{key}.txt")
+            np.savetxt(filepath, self.solution[key], delimiter=",")
+            self.logger.info(f"Saved {key} to {filepath}")
+        
+
 if __name__ == "__main__":
 
     contact_sequence = [
@@ -617,5 +628,5 @@ if __name__ == "__main__":
         print("Trajectory optimization completed successfully!")
     else:
         print("Trajectory optimization failed!")
-    
+    trajopt.save_solution_as_txt()
     trajopt.plots()

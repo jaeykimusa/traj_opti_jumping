@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# new version tgat includes friction and damping torques
 
 from trajopt_logging import get_logger
 from mpac_logging.rerun.utils import rerun_initialize
@@ -82,13 +83,13 @@ class TrajectoryOptimization:
         self.T_stance = 0.66
         self.stance_steps = int(self.T_stance / self.dt_c)  # Number of steps in stance phase
 
-        self.T_take_off = 0.20
+        self.T_take_off = 0.4
         self.take_off_steps = int(self.T_take_off / self.dt_c)  # Number of steps in take-off phase
 
         self.T_flight = 0.68
         self.flight_steps = int(self.T_flight / self.dt_f)  # Number of steps in flight phase
 
-        self.T_landing = 0.26
+        self.T_landing = 0.4
         self.landing_steps = int(self.T_landing / self.dt_c)  # Number of steps in landing phase
 
 
@@ -280,8 +281,8 @@ class TrajectoryOptimization:
         
         tau_ub = 45
         tau_lb = -45
-        joint_ub = np.array([0.01, 1.4, 0.0] * 4)
-        joint_lb = np.array([-0.01, -1, -2.8] * 4)
+        joint_ub = np.array([0.01, 1.4, -0.2] * 4)
+        joint_lb = np.array([-0.01, 0.1, -2.6] * 4)
 
         for t in range(self.num_steps):
             opti.subject_to(q_opt[6:, t] <= joint_ub)
@@ -624,10 +625,10 @@ if __name__ == "__main__":
     )
     
     if trajopt.solve():
-        # trajopt.visualize_solution()
+        trajopt.visualize_solution()
         # trajopt.get_solution()
         print("Trajectory optimization completed successfully!")
     else:
         print("Trajectory optimization failed!")
-    trajopt.save_solution_as_txt()
+    # trajopt.save_solution_as_txt()
     # trajopt.plots()

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# v2 11/27/2025
 
 from trajopt_logging import get_logger
 from mpac_logging.rerun.utils import rerun_initialize
@@ -49,7 +49,7 @@ class TrajectoryOptimization:
                  log_level: str = "info",
                  visualize: bool = False,
                 #  dt: float = 0.02,
-                 knee_clearance: float = 0.08,
+                 knee_clearance: float = 0.01,
                  robot_description: str = "go2_description",
                  mu: float = 0.8,
                  stance1_end_fraction: float = 0.25,
@@ -71,14 +71,19 @@ class TrajectoryOptimization:
         self.mu = mu
         self.stance1_end_fraction = stance1_end_fraction
         self.flight_end_fraction = flight_end_fraction
-        self.joint_position_weight = joint_position_weight
-        self.velocity_weight = velocity_weight
-        self.torque_weight = torque_weight
-        self.force_weight = force_weight
+        # self.joint_position_weight = joint_position_weight
+        # self.velocity_weight = velocity_weight
+        # self.torque_weight = torque_weight
+        # self.force_weight = force_weight
         self.max_iterations = max_iterations
+        self.joint_position_weight: float = 0.1,  # Reduce this
+        self.velocity_weight: float = 0.1,        # Reduce this
+        self.torque_weight: float = 0.01,         # Keep low
+        self.force_weight: float = 0.0001,        # Make very small to allow large forces
         self.dt_c = 0.02 #self.T_jump / ((stance1_end_fraction + 4*(flight_end_fraction-stance1_end_fraction) + (1-flight_end_fraction)) * num_steps) #0.025  # contact phase dt
         self.dt_f = 0.02 # * self.dt_c # Flight phase dt
 
+        self.fz_max = 225
         self.T_stance = 0.66
         self.stance_steps = int(self.T_stance / self.dt_c)  # Number of steps in stance phase
 
@@ -263,7 +268,7 @@ class TrajectoryOptimization:
         q_initial = np.array([0.0, 0, 0.27, 0, 0, 0, 0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8])
         v_initial = np.zeros(self.model.nv)
         # q_final = np.array([1.5, -0.75, 0.33, -0.46364, 0, 0, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802, 0, 0.806, -1.802])
-        q_final = np.array([1.5, 0, 0.27, 0, 0, 0, 0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8])
+        q_final = np.array([1, 0, 0.27, 0, 0, 0, 0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8])
         v_final = np.zeros(self.model.nv)
 
         # Boundary conditions
@@ -289,53 +294,21 @@ class TrajectoryOptimization:
             opti.subject_to(tau_opt[6:,t] <= tau_ub)
             opti.subject_to(tau_opt[6:,t] >= tau_lb)
 
-        # Stance 1 constraints
-        self.logger.info(f"Adding stance phase constraints.")
-        for t in range(0, self.stance_steps):
-            for i in range(4):
+        for t in range(0, self.stance_steps+self.take_off_steps):
+            for i in range(4):  # All feet in contact
                 fx = f_opt[3*i, t]
                 fy = f_opt[3*i+1, t]
                 fz = f_opt[3*i+2, t]
-                opti.subject_to(fz >= 0)
+                opti.subject_to(fz >= 0.01)
+                opti.subject_to(fz <= self.fz_max)
                 opti.subject_to(fx <= self.mu * fz)
                 opti.subject_to(fx >= -self.mu * fz)
                 opti.subject_to(fy <= self.mu * fz)
                 opti.subject_to(fy >= -self.mu * fz)
-
-            # Fixed foot positions during stance
+            
+            # Keep feet fixed during push-off
             initial_fk = self.forward_kinematics(self.model, self.data, q_initial)
             opti.subject_to(self.fn_fk_lf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.lf_pos)
-            opti.subject_to(self.fn_fk_lh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.lh_pos)
-            opti.subject_to(self.fn_fk_rf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.rf_pos)
-            opti.subject_to(self.fn_fk_rh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.rh_pos)
-
-            opti.subject_to(q_opt[:, t + 1] == q_opt[:, t] + v_opt[:, t] * self.dt_c)  # integrate position
-            opti.subject_to(v_opt[:, t + 1] == v_opt[:, t] + self.fn_fd(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) * self.dt_c)  # integrate velocity
-
-
-        self.logger.info(f"Adding take-off phase constraints. ")
-        for t in range(self.stance_steps, self.stance_steps+self.take_off_steps):
-            for i in range(0,4):
-                if i % 2 == 0:  # front foot
-                    fx = f_opt[3*i, t]
-                    fy = f_opt[3*i+1, t]
-                    fz = f_opt[3*i+2, t]
-                    opti.subject_to(fx == 0)
-                    opti.subject_to(fy == 0)
-                    opti.subject_to(fz == 0)
-                else:
-                    # rear foot
-                    fx = f_opt[3*i, t]
-                    fy = f_opt[3*i+1, t]
-                    fz = f_opt[3*i+2, t]
-                    opti.subject_to(fz >= 0)
-                    opti.subject_to(fx <= self.mu * fz)
-                    opti.subject_to(fx >= -self.mu * fz)
-                    opti.subject_to(fy <= self.mu * fz)
-                    opti.subject_to(fy >= -self.mu * fz)
-
-            # Fixed foot positions during stance
-            initial_fk = self.forward_kinematics(self.model, self.data, q_initial)
             opti.subject_to(self.fn_fk_lf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.lf_pos)
             opti.subject_to(self.fn_fk_lh(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.lh_pos)
             opti.subject_to(self.fn_fk_rf(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) == initial_fk.rf_pos)
@@ -349,7 +322,7 @@ class TrajectoryOptimization:
 
             opti.subject_to(q_opt[:, t + 1] == q_opt[:, t] + v_opt[:, t] * self.dt_c)  # integrate position
             opti.subject_to(v_opt[:, t + 1] == v_opt[:, t] + self.fn_fd(q_opt[:, t], v_opt[:, t], tau_opt[:, t], f_opt[:, t]) * self.dt_c)  # integrate velocity
-
+     
 
         # Flight phase constraints
         self.logger.info("Adding flight phase constraints.")
@@ -381,7 +354,8 @@ class TrajectoryOptimization:
                 fx = f_opt[3*i, t]
                 fy = f_opt[3*i+1, t]
                 fz = f_opt[3*i+2, t]
-                opti.subject_to(fz >= 0)
+                opti.subject_to(fz >= 0.01)
+                # opti.subject_to(fz <= self.fz_max)
                 opti.subject_to(fx <= self.mu * fz)
                 opti.subject_to(fx >= -self.mu * fz)
                 opti.subject_to(fy <= self.mu * fz)
@@ -408,6 +382,7 @@ class TrajectoryOptimization:
         total_cost = 0.0
         for t in range(self.num_steps):
             # total_cost += casadi.sumsqr(q_opt[6:, t] - q_initial[6:]) * self.joint_position_weight
+            total_cost += casadi.sumsqr(q_opt[6:, t] - q_initial[6:]) * self.joint_position_weight
             total_cost += casadi.sumsqr(q_opt[:, t]) * self.joint_position_weight
             total_cost += casadi.sumsqr(v_opt[:, t]) * self.velocity_weight
             total_cost += casadi.sumsqr(tau_opt[:, t]) * self.torque_weight
@@ -624,10 +599,10 @@ if __name__ == "__main__":
     )
     
     if trajopt.solve():
-        # trajopt.visualize_solution()
+        trajopt.visualize_solution()
         # trajopt.get_solution()
         print("Trajectory optimization completed successfully!")
     else:
         print("Trajectory optimization failed!")
-    trajopt.save_solution_as_txt()
+    # trajopt.save_solution_as_txt()
     # trajopt.plots()

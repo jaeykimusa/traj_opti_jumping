@@ -455,8 +455,8 @@ if __name__ == "__main__":
   parser.add_argument("--num_steps", type=int, default=30)
   parser.add_argument("--dt", type=float, default=0.05)
   parser.add_argument("--knee_clearance", type=float, default=0.08, help="Minimum knee height above ground (meters)")
-  args = parser.parse_args()
-
+  args = parser.parse_args() 
+  
   if args.visualize:
     rerun_initialize("trajopt")
 
